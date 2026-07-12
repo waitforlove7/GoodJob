@@ -7,7 +7,6 @@ const TYPE_STYLE = {
   job: { emissive: 0x071427, opacity: 0.88 },
   skill: { emissive: 0x17120c, opacity: 0.8 },
 };
-const MIN_VISIBLE_JOB_SKILLS = 6;
 
 export function JobGalaxy({ graph, selected, onSelect }) {
   const mountRef = useRef(null);
@@ -253,7 +252,6 @@ export function JobGalaxy({ graph, selected, onSelect }) {
 function createGraphObjects(scene, graph, objectMap, lineList) {
   const sphere = new THREE.SphereGeometry(1, 24, 16);
   for (const node of graph.nodes) {
-    if (!shouldRenderNode(node)) continue;
     const style = TYPE_STYLE[node.type];
     const material = new THREE.MeshStandardMaterial({
       color: new THREE.Color(node.color || "#ffffff"),
@@ -298,10 +296,6 @@ function createGraphObjects(scene, graph, objectMap, lineList) {
     scene.add(line);
     lineList.push(line);
   }
-}
-
-function shouldRenderNode(node) {
-  return node.type !== "job" || node.skillIds.length >= MIN_VISIBLE_JOB_SKILLS;
 }
 
 function createParticleSphereMaterial(color) {
