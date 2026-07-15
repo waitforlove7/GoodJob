@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { jobsMatchingAllSkills } from "./jobGraph.js";
 
 const TYPE_STYLE = {
   category: { emissive: 0x113344, opacity: 1 },
@@ -8,7 +9,7 @@ const TYPE_STYLE = {
   skill: { emissive: 0x17120c, opacity: 0.8 },
 };
 
-export function JobGalaxy({ graph, selected, onSelect }) {
+export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, layerView, skillCategoryFilterId }) {
   const mountRef = useRef(null);
   const sceneRef = useRef(null);
   const objectsRef = useRef(new Map());
@@ -18,10 +19,26 @@ export function JobGalaxy({ graph, selected, onSelect }) {
   const selectedRef = useRef(selected);
   const graphRef = useRef(graph);
   const onSelectRef = useRef(onSelect);
+  const layerViewRef = useRef(layerView);
   const [tooltip, setTooltip] = useState(null);
 
-  const highlighted = useMemo(() => buildHighlightSet(graph, selected), [graph, selected]);
+  const highlighted = useMemo(
+    () => buildHighlightSet(graph, selected, skillCategoryFilterId, selectedSkillIds),
+    [graph, selected, selectedSkillIds, skillCategoryFilterId],
+  );
   const skillVisuals = useMemo(() => skillVisualsForSelection(graph, selected), [graph, selected]);
+  const skillSelectionSummary = useMemo(() => {
+    const node = selected ? graph.nodeById.get(selected.id) : null;
+    if (node?.type !== "skill") return null;
+    const activeSkillIds = selectedSkillIds.length > 0 ? selectedSkillIds : [node.id];
+    const skills = activeSkillIds.map((skillId) => graph.nodeById.get(skillId)).filter(Boolean);
+    const jobCount = jobsMatchingAllSkills(graph, activeSkillIds).length;
+    return {
+      label: skills.length > 1 ? "技能组合" : "技能",
+      title: skills.map((skill) => skill.label).join(" + "),
+      description: skills.length > 1 ? `同时满足这些技能的岗位共 ${jobCount} 个。` : `该技能被 ${jobCount} 个岗位提到。`,
+    };
+  }, [graph, selected, selectedSkillIds]);
 
   useEffect(() => {
     selectedRef.current = selected;
@@ -34,6 +51,10 @@ export function JobGalaxy({ graph, selected, onSelect }) {
   useEffect(() => {
     graphRef.current = graph;
   }, [graph]);
+
+  useEffect(() => {
+    layerViewRef.current = layerView;
+  }, [layerView]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -112,13 +133,8 @@ export function JobGalaxy({ graph, selected, onSelect }) {
 
     const onClick = (event) => {
       const object = pick(event);
-      const currentSelection = selectedRef.current;
       if (object) {
         const node = object.userData.node;
-        if (currentSelection?.type === "job" && node.type === "skill") {
-          pointerMoved = false;
-          return;
-        }
         onSelectRef.current({ id: node.id, type: node.type });
       } else {
         pointerMoved = false;
@@ -151,7 +167,7 @@ export function JobGalaxy({ graph, selected, onSelect }) {
       const selectedNode = selectedRef.current ? graphRef.current.nodeById.get(selectedRef.current.id) : null;
       for (const mesh of objectsRef.current.values()) {
         const node = mesh.userData.node;
-        const targetPosition = focusedSkillPosition(node, selectedNode);
+        const targetPosition = targetNodePosition(node, selectedNode, layerViewRef.current);
         mesh.position.x = THREE.MathUtils.lerp(mesh.position.x, targetPosition.x, 0.085);
         mesh.position.z = THREE.MathUtils.lerp(mesh.position.z, targetPosition.z, 0.085);
         mesh.position.y = THREE.MathUtils.lerp(
@@ -164,6 +180,7 @@ export function JobGalaxy({ graph, selected, onSelect }) {
         if (mesh.userData.highlightMaterial) {
           mesh.userData.highlightMaterial.uniforms.uTime.value = elapsed;
         }
+        updateCategoryLabel(mesh);
       }
       updateLinePositions(linesRef.current);
       updateFixedLabels(fixedLabelsRef.current, fixedLabelDataRef.current, objectsRef.current, camera, renderer);
@@ -227,17 +244,25 @@ export function JobGalaxy({ graph, selected, onSelect }) {
 
   return (
     <div className="galaxy" ref={mountRef} aria-label="岗位技能三维关系图">
-      <div className="layer-legend" aria-hidden="true">
-        <span>大类</span>
-        <span>职位</span>
-        <span>技能</span>
-      </div>
       <div className="skill-heat-legend" aria-hidden="true">
         <span style={{ "--heat-color": "#6ee7a8" }}>低频</span>
         <span style={{ "--heat-color": "#d6e85f" }}>中低</span>
         <span style={{ "--heat-color": "#ffb347" }}>中高</span>
         <span style={{ "--heat-color": "#ff5f57" }}>高频</span>
       </div>
+      <div className="job-heat-legend" aria-hidden="true">
+        <strong>岗位技能数</strong>
+        <span>少</span>
+        <i />
+        <span>多</span>
+      </div>
+      {skillSelectionSummary ? (
+        <div className="skill-selection-summary" aria-live="polite">
+          <span>{skillSelectionSummary.label}</span>
+          <strong>{skillSelectionSummary.title}</strong>
+          <p>{skillSelectionSummary.description}</p>
+        </div>
+      ) : null}
       {tooltip ? (
         <div className="tooltip" style={{ left: tooltip.x + 14, top: tooltip.y + 14 }}>
           <span>{typeLabel(tooltip.type)}</span>
@@ -277,7 +302,7 @@ function createGraphObjects(scene, graph, objectMap, lineList) {
     objectMap.set(node.id, mesh);
 
     if (node.type === "category") {
-      addTextLabel(scene, node.label, node.x, node.y + node.radius + 1.35, node.z, node.color);
+      mesh.userData.categoryLabel = addTextLabel(scene, node.label, node.x, node.y + node.radius + 1.35, node.z, node.color);
     }
   }
 
@@ -381,6 +406,14 @@ function addTextLabel(scene, text, x, y, z, color) {
   sprite.scale.set(10, 2.5, 1);
   sprite.renderOrder = 10;
   scene.add(sprite);
+  return sprite;
+}
+
+function updateCategoryLabel(mesh) {
+  const label = mesh.userData.categoryLabel;
+  if (!label) return;
+  label.position.set(mesh.position.x, mesh.position.y + mesh.scale.y + 1.35, mesh.position.z);
+  label.visible = mesh.visible;
 }
 
 function updateLinePositions(lines) {
@@ -397,14 +430,14 @@ function updateLinePositions(lines) {
   }
 }
 
-function focusedSkillPosition(node, selectedNode) {
+function targetNodePosition(node, selectedNode, layerView) {
   if (selectedNode?.type !== "job" || node.type !== "skill") {
-    return node;
+    return layerView === "skill" && node.type !== "job" ? { ...node, y: -node.y } : node;
   }
 
   const skillIndex = selectedNode.skillIds.indexOf(node.id);
   if (skillIndex < 0) {
-    return node;
+    return layerView === "skill" ? { ...node, y: -node.y } : node;
   }
 
   const total = selectedNode.skillIds.length;
@@ -417,7 +450,7 @@ function focusedSkillPosition(node, selectedNode) {
 
   return {
     x: selectedNode.x + Math.cos(angle) * radius,
-    y: selectedNode.y - 21 - ring * 2.5,
+    y: selectedNode.y + (layerView === "skill" ? 1 : -1) * (21 + ring * 2.5),
     z: selectedNode.z + Math.sin(angle) * radius,
   };
 }
@@ -450,13 +483,26 @@ function updateFixedLabels(layer, labelData, objectMap, camera, renderer) {
   }
 }
 
-function buildHighlightSet(graph, selected) {
-  if (!selected) return { active: false, selectedType: null, nodes: new Set(), links: new Set(), contextNodes: new Set(), contextLinks: new Set() };
-  const nodes = new Set([selected.id]);
+function buildHighlightSet(graph, selected, skillCategoryFilterId, selectedSkillIds) {
+  if (!selected) {
+    return {
+      active: false,
+      selectedType: null,
+      nodes: new Set(),
+      links: new Set(),
+      contextNodes: new Set(),
+      contextLinks: new Set(),
+      skillCategoryFilterId: null,
+      skillIntersectionActive: false,
+    };
+  }
+  const node = graph.nodeById.get(selected.id);
+  const activeSkillIds = node?.type === "skill" && selectedSkillIds.length > 0 ? selectedSkillIds : [selected.id];
+  const nodes = new Set(activeSkillIds);
   const links = new Set();
   const contextNodes = new Set();
   const contextLinks = new Set();
-  const node = graph.nodeById.get(selected.id);
+  const activeSkillCategoryFilterId = node?.type === "skill" ? skillCategoryFilterId : null;
 
   if (node?.type === "category") {
     const categoryJobs = graph.jobsByCategory.get(node.id) || [];
@@ -479,15 +525,27 @@ function buildHighlightSet(graph, selected) {
       }
     }
   } else if (node?.type === "skill") {
-    for (const link of graph.links) {
-      if (link.target === node.id) {
-        links.add(link.id);
-        nodes.add(link.source);
+    if (activeSkillCategoryFilterId) nodes.add(activeSkillCategoryFilterId);
+    const matchingJobs = jobsMatchingAllSkills(graph, activeSkillIds);
+    for (const job of matchingJobs) {
+      if (activeSkillCategoryFilterId && job.categoryId !== activeSkillCategoryFilterId) continue;
+      nodes.add(job.id);
+      for (const skillId of activeSkillIds) {
+        links.add(`${job.id}->${skillId}`);
       }
     }
   }
 
-  return { active: true, selectedType: node?.type || selected.type, nodes, links, contextNodes, contextLinks };
+  return {
+    active: true,
+    selectedType: node?.type || selected.type,
+    nodes,
+    links,
+    contextNodes,
+    contextLinks,
+    skillCategoryFilterId: activeSkillCategoryFilterId,
+    skillIntersectionActive: node?.type === "skill" && activeSkillIds.length > 1,
+  };
 }
 
 function skillVisualsForSelection(graph, selected) {
@@ -520,8 +578,22 @@ function applyHighlight(objectMap, lines, highlighted, skillVisuals) {
       mesh.userData.node.type === "job" &&
       !isHighlighted &&
       !isContext;
+    const hideFilteredSkillJob =
+      highlighted.skillCategoryFilterId &&
+      mesh.userData.node.type === "job" &&
+      !isHighlighted;
+    const hideNonIntersectionJob =
+      highlighted.skillIntersectionActive &&
+      mesh.userData.node.type === "job" &&
+      !isHighlighted;
     const hideSampledFullLinkJob = !highlighted.active && mesh.userData.node.type === "job" && mesh.userData.node.index % 2 === 1;
-    mesh.visible = !hideInactiveSkill && !hideInactiveCategoryJob && !hideOtherCategoryJob && !hideSampledFullLinkJob;
+    mesh.visible =
+      !hideInactiveSkill &&
+      !hideInactiveCategoryJob &&
+      !hideOtherCategoryJob &&
+      !hideFilteredSkillJob &&
+      !hideNonIntersectionJob &&
+      !hideSampledFullLinkJob;
     const inactiveOpacity =
       isCategoryFocus && mesh.userData.node.type === "category"
         ? 1

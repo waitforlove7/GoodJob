@@ -151,10 +151,8 @@ export const SKILL_RULES = [
   ["Python", ["Python"]],
   ["Java", ["Java"]],
   ["Go", ["Golang", "Go语言", "Go"]],
-  ["C++", ["C++", "CPP"]],
-  ["C", ["C语言", "C"]],
-  ["JavaScript", ["JavaScript", "JS"]],
-  ["TypeScript", ["TypeScript", "TS"]],
+  ["C/C++", ["C++", "CPP", "C语言", { term: "C", excludeSuffixes: ["端"] }]],
+  ["JS/TS", ["JavaScript", "TypeScript", "JS", "TS", "Node.js", "NodeJS", "Node"]],
   ["iOS", ["iOS", "IOS"]],
   ["Android", ["Android"]],
   ["Flutter", ["Flutter"]],
@@ -164,12 +162,12 @@ export const SKILL_RULES = [
   ["ReAct", [{ term: "ReAct", caseSensitive: true }]],
   ["Vue", ["Vue"]],
   ["Svelte", ["Svelte"]],
-  ["Node.js", ["Node.js", "NodeJS", "Node"]],
+  ["Webpack/Vite", ["Webpack", "Vite"]],
   ["HTML/CSS", ["HTML", "CSS"]],
   ["Linux", ["Linux"]],
   ["RTOS", ["RTOS"]],
   ["Sensor", ["Sensor", "传感器"]],
-  ["驱动开发", ["驱动开发", "驱动"]],
+  ["驱动开发", ["驱动开发"]],
   ["PCIe", ["PCIe", "PCIE"]],
   ["RDMA", ["RDMA"]],
   ["TCP/IP", ["TCP/IP", "TCP IP", "TCPIP"]],
@@ -219,7 +217,6 @@ export const SKILL_RULES = [
   ["机器学习", ["机器学习", "ML"]],
   ["深度学习", ["深度学习"]],
   ["推荐系统", ["推荐系统", "推荐算法"]],
-  ["搜索", ["搜索引擎", "搜索"]],
   ["数据仓库", ["数据仓库", "数仓"]],
   ["数据湖", ["数据湖", "湖仓"]],
   ["自动化测试", ["自动化测试", "测试自动化"]],
@@ -235,6 +232,11 @@ export const SKILL_RULES = [
 
 const allCategories = [...CATEGORY_RULES, OTHER_CATEGORY];
 const SKILL_LEVEL_COLORS = ["#6ee7a8", "#d6e85f", "#ffb347", "#ff5f57"];
+const SKILL_COMBINATION_EXCLUSIVE_GROUPS = [
+  new Set(["Python", "Java", "Go", "C/C++", "JS/TS", "Rust", "Swift"]),
+  new Set(["React", "Vue", "Svelte"]),
+  new Set(["PyTorch", "TensorFlow"]),
+];
 
 export function buildJobGraph(payload) {
   const sourceItems = Array.isArray(payload) ? payload : payload?.items || [];
@@ -268,7 +270,7 @@ export function buildJobGraph(payload) {
     const category = categoryByKey.get(categoryKey) || categoryByKey.get("other");
     const skillLabels = new Set(extractSkills(text));
     if (category.key === "frontend") {
-      skillLabels.add("JavaScript");
+      skillLabels.add("JS/TS");
     }
     const jobId = `job:${item?.job_id || index}`;
 
@@ -335,6 +337,9 @@ export function buildJobGraph(payload) {
   const skillRankingByCategory = new Map(
     categories.map((category) => [category.id, rankingFromCounts(skillCountByCategory.get(category.id), nodeById)]),
   );
+  const skillTripleRankingByCategory = new Map(
+    categories.map((category) => [category.id, rankSkillTriples(jobsByCategory.get(category.id), nodeById)]),
+  );
   const globalSkillVisuals = buildSkillVisualMap(skills, globalSkillCount);
   const skillVisualsByCategory = new Map(
     categories.map((category) => [category.id, buildSkillVisualMap(skills, skillCountByCategory.get(category.id))]),
@@ -352,6 +357,7 @@ export function buildJobGraph(payload) {
     jobsBySkillAndCategory,
     globalSkillRanking,
     skillRankingByCategory,
+    skillTripleRankingByCategory,
     globalSkillVisuals,
     skillVisualsByCategory,
     stats: {
@@ -429,12 +435,57 @@ export function extractSkills(text) {
   return [...found];
 }
 
+export function jobsMatchingAllSkills(graph, skillIds) {
+  if (!skillIds.length) return [];
+  const [firstSkillId, ...remainingSkillIds] = skillIds;
+  return (graph.jobsBySkill.get(firstSkillId) || []).filter((job) =>
+    remainingSkillIds.every((skillId) => job.skillIds.includes(skillId)),
+  );
+}
+
+export function rankSkillTriples(jobs, nodeById) {
+  const counts = new Map();
+
+  for (const job of jobs) {
+    const skills = [...new Set(job.skillIds)]
+      .map((skillId) => nodeById.get(skillId))
+      .filter(Boolean);
+
+    for (let first = 0; first < skills.length - 2; first += 1) {
+      for (let second = first + 1; second < skills.length - 1; second += 1) {
+        for (let third = second + 1; third < skills.length; third += 1) {
+          const combination = [skills[first], skills[second], skills[third]].sort((a, b) =>
+            a.label.localeCompare(b.label, "zh-CN"),
+          );
+          const labels = combination.map((skill) => skill.label);
+          const hasExclusiveOverlap = SKILL_COMBINATION_EXCLUSIVE_GROUPS.some(
+            (group) => labels.filter((label) => group.has(label)).length > 1,
+          );
+          if (hasExclusiveOverlap) continue;
+
+          const id = combination.map((skill) => skill.id).join("|");
+          const current = counts.get(id);
+          counts.set(id, current ? { ...current, count: current.count + 1 } : { id, skills: combination, count: 1 });
+        }
+      }
+    }
+  }
+
+  return [...counts.values()]
+    .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id))
+    .map((combination) => ({
+      ...combination,
+      share: jobs.length ? combination.count / jobs.length : 0,
+    }));
+}
+
 function assignPositions(categories, jobs, skills, jobsByCategory) {
   const categoryRadius = 34;
   const jobRadiusBase = 13;
   const skillRadius = Math.max(34, Math.sqrt(skills.length) * 3.4);
   const categoryCounts = categories.map((category) => jobsByCategory.get(category.id)?.length || 0);
   const maxCategoryCount = Math.max(...categoryCounts, 1);
+  const maxJobSkillCount = Math.max(...jobs.map((job) => job.skillIds.length), 0);
   const maxSkillCount = Math.max(...skills.map((skill) => skill.count), 1);
 
   const categoriesBySize = [...categories].sort((a, b) => {
@@ -463,6 +514,7 @@ function assignPositions(categories, jobs, skills, jobsByCategory) {
       job.x = category.x * 0.45 + localX;
       job.y = 0 + ((index % 5) - 2) * 0.7;
       job.z = category.z * 0.45 + localZ;
+      job.color = heatColor(job.skillIds.length, maxJobSkillCount);
       job.radius = 0.82;
     });
   }
@@ -500,6 +552,25 @@ function skillVisual(count, maxCount) {
     color: SKILL_LEVEL_COLORS[level],
     radius: 0.42 + Math.sqrt(count / maxCount) * 1.05,
   };
+}
+
+function heatColor(count, maxCount) {
+  const ratio = maxCount > 0 ? Math.min(Math.max(count / maxCount, 0), 1) : 0;
+  const position = ratio * (SKILL_LEVEL_COLORS.length - 1);
+  const startIndex = Math.floor(position);
+  const endIndex = Math.min(startIndex + 1, SKILL_LEVEL_COLORS.length - 1);
+  return interpolateHexColor(SKILL_LEVEL_COLORS[startIndex], SKILL_LEVEL_COLORS[endIndex], position - startIndex);
+}
+
+function interpolateHexColor(start, end, amount) {
+  const startValue = Number.parseInt(start.slice(1), 16);
+  const endValue = Number.parseInt(end.slice(1), 16);
+  const channels = [16, 8, 0].map((shift) => {
+    const startChannel = (startValue >> shift) & 0xff;
+    const endChannel = (endValue >> shift) & 0xff;
+    return Math.round(startChannel + (endChannel - startChannel) * amount);
+  });
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function buildSkillVisualMap(skills, counts) {
@@ -551,7 +622,11 @@ function aliasMatches(text, aliasConfig) {
   if (!text || !alias) return false;
   if (/^[A-Za-z0-9.+#-]+$/.test(alias)) {
     const escaped = escapeRegExp(alias);
-    return new RegExp(`(^|[^A-Za-z0-9.+#-])${escaped}([^A-Za-z0-9.+#-]|$)`, flags).test(text);
+    const excludeSuffixes = typeof aliasConfig === "string" ? [] : aliasConfig.excludeSuffixes || [];
+    const suffixGuard = excludeSuffixes.length
+      ? `(?!\\s*(?:${excludeSuffixes.map(escapeRegExp).join("|")}))`
+      : "";
+    return new RegExp(`(^|[^A-Za-z0-9.+#-])${escaped}${suffixGuard}([^A-Za-z0-9.+#-]|$)`, flags).test(text);
   }
   return flags === "i" ? text.toLowerCase().includes(alias.toLowerCase()) : text.includes(alias);
 }

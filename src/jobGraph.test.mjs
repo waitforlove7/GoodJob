@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import jobsPayload from "../example.json" with { type: "json" };
-import { buildJobGraph, classifyJob, cleanJobTitle, extractSkills } from "./jobGraph.js";
+import { buildJobGraph, classifyJob, cleanJobTitle, extractSkills, jobsMatchingAllSkills, rankSkillTriples } from "./jobGraph.js";
 
 test("builds graph from example.json", () => {
   const graph = buildJobGraph(jobsPayload);
@@ -89,14 +89,37 @@ test("deduplicates aliases inside one job", () => {
   assert.equal(skills.filter((skill) => skill === "Kubernetes").length, 1);
 });
 
-test("extracts C separately from C++", () => {
-  const slashSkills = extractSkills("熟悉 C/C++ 系统开发。");
-  const cppOnlySkills = extractSkills("熟悉 C++ 系统开发。");
+test("merges Webpack and Vite into one skill per job", () => {
+  assert.deepEqual(extractSkills("熟悉 Webpack 构建优化。"), ["Webpack/Vite"]);
+  assert.deepEqual(extractSkills("熟悉 vite 工程化配置。"), ["Webpack/Vite"]);
 
-  assert.ok(slashSkills.includes("C"));
-  assert.ok(slashSkills.includes("C++"));
-  assert.equal(cppOnlySkills.includes("C"), false);
-  assert.ok(cppOnlySkills.includes("C++"));
+  const skills = extractSkills("熟悉 Webpack 和 Vite 构建优化。");
+  assert.equal(skills.filter((skill) => skill === "Webpack/Vite").length, 1);
+});
+
+test("merges JavaScript TypeScript and Node.js into JS/TS once per job", () => {
+  assert.deepEqual(extractSkills("熟悉 JavaScript 开发。"), ["JS/TS"]);
+  assert.deepEqual(extractSkills("熟悉 TypeScript 开发。"), ["JS/TS"]);
+  assert.deepEqual(extractSkills("熟悉 Node.js 服务端开发。"), ["JS/TS"]);
+
+  const skills = extractSkills("熟悉 JavaScript、TypeScript、NodeJS、JS 和 TS。");
+  assert.equal(skills.filter((skill) => skill === "JS/TS").length, 1);
+  assert.equal(skills.includes("Node.js"), false);
+});
+
+test("merges C and C++ into one skill per job", () => {
+  assert.deepEqual(extractSkills("熟悉 C 开发。"), ["C/C++"]);
+  assert.deepEqual(extractSkills("熟悉 C语言开发。"), ["C/C++"]);
+  assert.deepEqual(extractSkills("熟悉 C++ 和 CPP 开发。"), ["C/C++"]);
+
+  const skills = extractSkills("熟悉 C/C++ 系统开发。");
+  assert.equal(skills.filter((skill) => skill === "C/C++").length, 1);
+});
+
+test("does not extract C from client-side product terms", () => {
+  const skills = extractSkills("负责电商 C端、B/C端产品和用户体验建设。");
+
+  assert.equal(skills.includes("C/C++"), false);
 });
 
 test("extracts ios swift and rust skills", () => {
@@ -116,6 +139,12 @@ test("extracts mobile embedded and driver skills", () => {
   assert.ok(skills.includes("RTOS"));
   assert.ok(skills.includes("Sensor"));
   assert.ok(skills.includes("驱动开发"));
+});
+
+test("does not extract driver development from technology-driven phrases", () => {
+  const skills = extractSkills("坚持技术驱动、数据驱动，并具备较强的自我驱动力。");
+
+  assert.equal(skills.includes("驱动开发"), false);
 });
 
 test("extracts hardware io skills", () => {
@@ -190,6 +219,12 @@ test("does not extract security risk control as a skill", () => {
   const skills = extractSkills("负责安全、风控、反作弊、反欺诈策略建设。");
 
   assert.equal(skills.includes("安全风控"), false);
+});
+
+test("does not extract search as a skill", () => {
+  const skills = extractSkills("负责搜索引擎和 AI 搜索产品建设。");
+
+  assert.equal(skills.includes("搜索"), false);
 });
 
 test("extracts prompt and agent framework skills", () => {
@@ -267,6 +302,27 @@ test("assigns skill colors by frequency level", () => {
   assert.equal(bottomSkill.color, "#6ee7a8");
 });
 
+test("assigns job colors by global skill count on a continuous heat scale", () => {
+  const graph = buildJobGraph({
+    items: [
+      { job_id: "zero", title: "通用工程师", requirement: "" },
+      { job_id: "one-a", title: "通用工程师", requirement: "Python" },
+      { job_id: "one-b", title: "通用工程师", requirement: "Java" },
+      { job_id: "two", title: "通用工程师", requirement: "Python Java" },
+      { job_id: "four", title: "通用工程师", requirement: "Python Java Go Rust" },
+      { job_id: "six", title: "通用工程师", requirement: "Python Java Go Rust C++ SQL" },
+    ],
+  });
+  const colorByJobId = new Map(graph.jobs.map((job) => [job.jobId, job.color]));
+
+  assert.equal(colorByJobId.get("zero"), "#6ee7a8");
+  assert.equal(colorByJobId.get("one-a"), "#a2e884");
+  assert.equal(colorByJobId.get("one-a"), colorByJobId.get("one-b"));
+  assert.equal(colorByJobId.get("two"), "#d6e85f");
+  assert.equal(colorByJobId.get("four"), "#ffb347");
+  assert.equal(colorByJobId.get("six"), "#ff5f57");
+});
+
 test("indexes jobs by skill and category", () => {
   const graph = buildJobGraph(jobsPayload);
   const python = graph.skills.find((skill) => skill.label === "Python");
@@ -277,9 +333,55 @@ test("indexes jobs by skill and category", () => {
   assert.equal(groupedCount, python.count);
 });
 
-test("adds JavaScript to every frontend job", () => {
+test("finds only jobs that contain every selected skill", () => {
+  const graph = buildJobGraph({
+    items: [
+      { job_id: "python", title: "通用工程师", requirement: "Python" },
+      { job_id: "java", title: "通用工程师", requirement: "Java" },
+      { job_id: "both", title: "通用工程师", requirement: "Python Java" },
+    ],
+  });
+  const python = graph.skills.find((skill) => skill.label === "Python");
+  const java = graph.skills.find((skill) => skill.label === "Java");
+
+  assert.deepEqual(jobsMatchingAllSkills(graph, [python.id, java.id]).map((job) => job.jobId), ["both"]);
+});
+
+test("ranks three-skill combinations and filters substitute piles", () => {
+  const skills = ["Go", "Java", "MySQL", "Redis"].map((label) => ({ id: `skill:${label}`, label }));
+  const nodeById = new Map(skills.map((skill) => [skill.id, skill]));
+  const jobs = [
+    { skillIds: ["skill:Go", "skill:MySQL", "skill:Redis"] },
+    { skillIds: ["skill:Go", "skill:MySQL", "skill:Redis"] },
+    { skillIds: ["skill:Go", "skill:Java", "skill:MySQL", "skill:Redis"] },
+  ];
+
+  const ranking = rankSkillTriples(jobs, nodeById);
+
+  assert.deepEqual(ranking[0].skills.map((skill) => skill.label), ["Go", "MySQL", "Redis"]);
+  assert.equal(ranking[0].count, 3);
+  assert.equal(ranking[0].share, 1);
+  assert.equal(ranking.some((combination) => combination.skills.every((skill) => ["Go", "Java", "MySQL"].includes(skill.label))), false);
+});
+
+test("builds category-specific three-skill rankings", () => {
+  const graph = buildJobGraph({
+    items: [
+      { job_id: "one", title: "后端开发工程师", requirement: "Go MySQL Redis" },
+      { job_id: "two", title: "后端开发工程师", requirement: "Go MySQL Redis Kafka" },
+      { job_id: "three", title: "后端开发工程师", requirement: "Java MySQL Redis" },
+    ],
+  });
+  const backendRanking = graph.skillTripleRankingByCategory.get("category:backend");
+
+  assert.deepEqual(backendRanking[0].skills.map((skill) => skill.label), ["Go", "MySQL", "Redis"]);
+  assert.equal(backendRanking[0].count, 2);
+  assert.equal(backendRanking[0].share, 2 / 3);
+});
+
+test("adds JS/TS to every frontend job", () => {
   const graph = buildJobGraph(jobsPayload);
-  const javascript = graph.skills.find((skill) => skill.label === "JavaScript");
+  const javascript = graph.skills.find((skill) => skill.label === "JS/TS");
   const frontendJobs = graph.jobsByCategory.get("category:frontend");
   const frontendJavaScriptJobs = graph.jobsBySkillAndCategory.get(javascript.id).get("category:frontend");
 
