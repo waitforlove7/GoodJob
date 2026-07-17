@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { jobsMatchingAllSkills } from "./jobGraph.js";
+import { graphForSelection, jobsMatchingAllSkills } from "./jobGraph.js";
 
 const TYPE_STYLE = {
   category: { emissive: 0x113344, opacity: 1 },
@@ -21,6 +21,25 @@ export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, la
   const onSelectRef = useRef(onSelect);
   const layerViewRef = useRef(layerView);
   const [tooltip, setTooltip] = useState(null);
+  const selectedGraphNode = selected ? graph.nodeById.get(selected.id) : null;
+  const expandedCategoryId = selectedGraphNode?.type === "category"
+    ? selectedGraphNode.id
+    : selectedGraphNode?.type === "job"
+      ? selectedGraphNode.categoryId
+      : null;
+  const selectedSkillId = selectedGraphNode?.type === "skill" ? selectedGraphNode.id : null;
+  const sceneGraph = useMemo(
+    () => graphForSelection(
+      graph,
+      selectedSkillId
+        ? { id: selectedSkillId, type: "skill" }
+        : expandedCategoryId
+          ? { id: expandedCategoryId, type: "category" }
+          : null,
+      { selectedSkillIds, skillCategoryFilterId },
+    ),
+    [graph, expandedCategoryId, selectedSkillId, selectedSkillIds, skillCategoryFilterId],
+  );
 
   const highlighted = useMemo(
     () => buildHighlightSet(graph, selected, skillCategoryFilterId, selectedSkillIds),
@@ -90,7 +109,7 @@ export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, la
     scene.add(fill);
 
     addReferenceRings(scene);
-    createGraphObjects(scene, graph, objectsRef.current, linesRef.current);
+    createGraphObjects(scene, sceneGraph, objectsRef.current, linesRef.current);
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -203,7 +222,7 @@ export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, la
       objectsRef.current.clear();
       linesRef.current = [];
     };
-  }, [graph]);
+  }, [sceneGraph]);
 
   useEffect(() => {
     applyHighlight(objectsRef.current, linesRef.current, highlighted, skillVisuals);
@@ -530,6 +549,8 @@ function buildHighlightSet(graph, selected, skillCategoryFilterId, selectedSkill
     for (const job of matchingJobs) {
       if (activeSkillCategoryFilterId && job.categoryId !== activeSkillCategoryFilterId) continue;
       nodes.add(job.id);
+      nodes.add(job.categoryId);
+      links.add(`${job.categoryId}->${job.id}`);
       for (const skillId of activeSkillIds) {
         links.add(`${job.id}->${skillId}`);
       }

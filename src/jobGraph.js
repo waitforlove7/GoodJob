@@ -237,7 +237,7 @@ const SKILL_COMBINATION_EXCLUSIVE_GROUPS = [
   new Set(["PyTorch", "TensorFlow"]),
 ];
 
-export function buildJobGraph(payload) {
+export function buildJobGraph(payload, { source = "unknown", categoryOverrides = JOB_CATEGORY_OVERRIDES } = {}) {
   const sourceItems = Array.isArray(payload) ? payload : payload?.items || [];
   const categories = allCategories.map((rule, index) => ({
     id: `category:${rule.id}`,
@@ -261,28 +261,42 @@ export function buildJobGraph(payload) {
 
   for (const [index, item] of sourceItems.entries()) {
     const title = cleanText(item?.title);
-    const displayTitle = cleanJobTitle(title);
+    const displayTitle = payload?.precomputed
+      ? title
+      : cleanText(item?.display_title) || cleanJobTitle(title);
     const description = cleanText(item?.description);
     const requirement = cleanText(item?.requirement);
     const text = `${title}\n${description}\n${requirement}`;
-    const categoryKey = JOB_CATEGORY_OVERRIDES.get(String(item?.job_id || "")) || classifyJob(title, `${description}\n${requirement}`);
+    const categoryKey = item?.category_key
+      || categoryOverrides.get(`${item?.source || source}:${item?.job_id || ""}`)
+      || categoryOverrides.get(String(item?.job_id || ""))
+      || classifyJob(title, `${description}\n${requirement}`);
     const category = categoryByKey.get(categoryKey) || categoryByKey.get("other");
-    const skillLabels = new Set(extractSkills(text));
+    const skillLabels = new Set(
+      Array.isArray(item?.skill_labels) ? item.skill_labels : extractSkills(text),
+    );
     if (category.key === "frontend") {
       skillLabels.add("JS/TS");
     }
-    const jobId = `job:${item?.job_id || index}`;
+    const jobSource = item?.source || source;
+    const rawJobId = item?.role_id || item?.job_id || index;
+    const jobId = `job:${jobSource}:${rawJobId}`;
 
     const job = {
       id: jobId,
       type: "job",
       label: displayTitle || title || `未命名岗位 ${index + 1}`,
       rawTitle: title,
-      jobId: item?.job_id || "",
+      source: jobSource,
+      sourceLabel: item?.source_label || jobSource,
+      jobId: rawJobId,
+      roleId: item?.role_id || rawJobId,
       displayJobId: item?.display_job_id || "",
       url: item?.url || "",
       description,
       requirement,
+      postingCount: Number(item?.posting_count) || 1,
+      locations: Array.isArray(item?.locations) ? item.locations : [],
       categoryId: category.id,
       categoryKey: category.key,
       skillIds: [],
@@ -328,6 +342,19 @@ export function buildJobGraph(payload) {
     skill.index = index;
   });
 
+  for (const category of categories) {
+    const counts = skillCountByCategory.get(category.id);
+    for (const [skillId, count] of counts.entries()) {
+      links.push({
+        id: `${category.id}->${skillId}`,
+        source: category.id,
+        target: skillId,
+        type: "category-skill",
+        count,
+      });
+    }
+  }
+
   const nodes = [...categories, ...jobs, ...skills];
   assignPositions(categories, jobs, skills, jobsByCategory);
 
@@ -360,14 +387,115 @@ export function buildJobGraph(payload) {
     globalSkillVisuals,
     skillVisualsByCategory,
     stats: {
-      totalJobs: jobs.length,
-      completeJobs: sourceItems.filter((item) => cleanText(item?.description) && cleanText(item?.requirement)).length,
-      completeRate: jobs.length
-        ? Math.round((sourceItems.filter((item) => cleanText(item?.description) && cleanText(item?.requirement)).length / jobs.length) * 100)
+      totalJobs: payload?.total_postings ?? jobs.length,
+      roleCount: jobs.length,
+      completeJobs: payload?.complete_postings
+        ?? sourceItems.filter((item) => cleanText(item?.description) && cleanText(item?.requirement)).length,
+      completeRate: (payload?.total_postings ?? jobs.length)
+        ? Math.round(((payload?.complete_postings
+          ?? sourceItems.filter((item) => cleanText(item?.description) && cleanText(item?.requirement)).length)
+          / (payload?.total_postings ?? jobs.length)) * 100)
         : 0,
       sourceUrl: payload?.source_url || "",
     },
   };
+}
+
+export function graphForSelection(
+  graph,
+  selected,
+  { selectedSkillIds = [], skillCategoryFilterId = null } = {},
+) {
+  const selectedNode = selected ? graph.nodeById.get(selected.id) : null;
+  if (selectedNode?.type === "skill") {
+    const activeSkillIds = selectedSkillIds.length > 0 ? selectedSkillIds : [selectedNode.id];
+    const matchingJobs = jobsMatchingAllSkills(graph, activeSkillIds).filter((job) => (
+      !skillCategoryFilterId || job.categoryId === skillCategoryFilterId
+    ));
+    const matchingJobIds = new Set(matchingJobs.map((job) => job.id));
+    const matchingCategoryIds = new Set(matchingJobs.map((job) => job.categoryId));
+    const activeSkillIdSet = new Set(activeSkillIds);
+    const visibleNodeIds = new Set([
+      ...graph.categories.map((category) => category.id),
+      ...graph.skills.map((skill) => skill.id),
+      ...matchingJobIds,
+    ]);
+    return {
+      ...graph,
+      nodes: graph.nodes.filter((node) => visibleNodeIds.has(node.id)),
+      links: graph.links.filter((link) => (
+        (link.type === "category-job" && matchingJobIds.has(link.target))
+        || (link.type === "job-skill" && matchingJobIds.has(link.source) && activeSkillIdSet.has(link.target))
+        || (link.type === "category-skill" && matchingCategoryIds.has(link.source) && activeSkillIdSet.has(link.target))
+      )),
+    };
+  }
+  const categoryId = selectedNode?.type === "category"
+    ? selectedNode.id
+    : selectedNode?.type === "job"
+      ? selectedNode.categoryId
+      : null;
+  const categoryJobs = categoryId ? graph.jobsByCategory.get(categoryId) || [] : [];
+  const visibleNodeIds = new Set([
+    ...graph.categories.map((category) => category.id),
+    ...graph.skills.map((skill) => skill.id),
+    ...categoryJobs.map((job) => job.id),
+  ]);
+  const links = categoryId
+    ? graph.links.filter((link) => (
+        (link.type === "category-job" && link.source === categoryId)
+        || (link.type === "job-skill" && visibleNodeIds.has(link.source))
+        || (link.type === "category-skill" && link.source === categoryId)
+      ))
+    : graph.links.filter((link) => link.type === "category-skill");
+  return {
+    ...graph,
+    nodes: graph.nodes.filter((node) => visibleNodeIds.has(node.id)),
+    links,
+  };
+}
+
+export function searchJobs(graph, query, limit = 10) {
+  const normalizedQuery = cleanText(query).normalize("NFKC").toLocaleLowerCase();
+  if (!normalizedQuery) return [];
+  const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+
+  return graph.jobs
+    .map((job) => {
+      const category = graph.nodeById.get(job.categoryId);
+      const skillLabels = job.skillIds
+        .map((skillId) => graph.nodeById.get(skillId)?.label || "")
+        .filter(Boolean);
+      const title = job.label.normalize("NFKC").toLocaleLowerCase();
+      const skillText = skillLabels.join(" ").normalize("NFKC").toLocaleLowerCase();
+      const context = [
+        title,
+        category?.label || "",
+        skillText,
+        job.sourceLabel || job.source,
+        ...job.locations,
+      ].join(" ").normalize("NFKC").toLocaleLowerCase();
+      if (!tokens.every((token) => context.includes(token))) return null;
+
+      const score = title === normalizedQuery
+        ? 0
+        : title.startsWith(normalizedQuery)
+          ? 1
+          : title.includes(normalizedQuery)
+            ? 2
+            : skillText.includes(normalizedQuery)
+              ? 3
+              : 4;
+      return { job, score };
+    })
+    .filter(Boolean)
+    .sort((a, b) => (
+      a.score - b.score
+      || b.job.postingCount - a.job.postingCount
+      || a.job.label.localeCompare(b.job.label)
+    ))
+    .slice(0, limit)
+    .map(({ job }) => job);
 }
 
 export function classifyJob(title, body) {

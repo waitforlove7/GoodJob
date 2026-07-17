@@ -5,9 +5,10 @@
   "main": "index.js",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "build:data": "node scripts/build_compact_data.mjs",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --test src/*.test.mjs"
+    "test": "node --test tests/*.test.mjs"
   },
   "keywords": [],
   "author": "",

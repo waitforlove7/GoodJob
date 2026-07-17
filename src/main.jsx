@@ -1,26 +1,81 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Analytics, track } from "@vercel/analytics/react";
-import { Activity, ArrowDownRight, BriefcaseBusiness, Layers3, Search, Sparkles } from "lucide-react";
+import { Activity, BriefcaseBusiness, Building2, Layers3, Search, Sparkles } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Sector, Tooltip } from "recharts";
-import jobsPayload from "../bytedance_jobs.json";
-import { buildJobGraph, jobsMatchingAllSkills, sortRelatedJobs } from "./jobGraph.js";
+import { buildJobGraph, jobsMatchingAllSkills, searchJobs, sortRelatedJobs } from "./jobGraph.js";
 import { JobGalaxy } from "./JobGalaxy.jsx";
 import { SkillDag, SkillDagPanel } from "./SkillDag.jsx";
 import "./styles.css";
+import {
+  COMPANY_CONFIGS,
+  COMPANY_KEYS,
+  buildMergedOverrides,
+  loadCompanyData,
+  loadMergedData,
+  loadRoleDetails,
+} from "./adapters/index.js";
 
 function App() {
-  const graph = useMemo(() => buildJobGraph(jobsPayload), []);
+  const [companyKey, setCompanyKey] = useState("all");
+  const [graph, setGraph] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [layerView, setLayerView] = useState("category");
   const [skillViewMode, setSkillViewMode] = useState("frequency");
   const [skillCategoryFilterId, setSkillCategoryFilterId] = useState(null);
   const [selectedSkillIds, setSelectedSkillIds] = useState([]);
   const [masteredSkillIds, setMasteredSkillIds] = useState([]);
   const [relatedJobId, setRelatedJobId] = useState(null);
-  const [selected, setSelected] = useState(() => {
-    const backend = graph.categories.find((category) => category.key === "backend");
-    return backend ? { id: backend.id, type: backend.type } : null;
-  });
+  const [selected, setSelected] = useState(null);
+
+  const handleCompanyChange = useCallback((nextCompanyKey) => {
+    setCompanyKey(nextCompanyKey);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setSelected(null);
+    setSelectedSkillIds([]);
+    setMasteredSkillIds([]);
+    setRelatedJobId(null);
+    setSkillCategoryFilterId(null);
+    setSkillViewMode("frequency");
+    setLayerView("category");
+    (async () => {
+      try {
+        let payload, overrides;
+        if (companyKey === "all") {
+          payload = await loadMergedData(COMPANY_KEYS);
+          overrides = buildMergedOverrides(COMPANY_KEYS);
+        } else {
+          payload = await loadCompanyData(companyKey);
+          overrides = buildMergedOverrides([companyKey]);
+        }
+        const g = buildJobGraph(payload, { source: payload.source, categoryOverrides: overrides });
+        if (!cancelled) {
+          setGraph(g);
+          setSelected(null);
+        }
+      } catch (err) {
+        console.error("[JobCloud] Failed to load company data:", err);
+        if (!cancelled) {
+          setGraph({
+            categories: [], jobs: [], skills: [], nodes: [], links: [],
+            nodeById: new Map(), jobsByCategory: new Map(), jobsBySkill: new Map(),
+            jobsBySkillAndCategory: new Map(), globalSkillRanking: [],
+            skillRankingByCategory: new Map(), skillTripleRankingByCategory: new Map(),
+            globalSkillVisuals: new Map(), skillVisualsByCategory: new Map(),
+            stats: { totalJobs: 0, completeJobs: 0, completeRate: 0 },
+          });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [companyKey]);
+
   const handleSelect = useCallback((nextSelection) => {
     setRelatedJobId(null);
     setSkillCategoryFilterId(null);
@@ -29,7 +84,7 @@ function App() {
       setSelectedSkillIds([]);
       return;
     }
-    const node = graph.nodeById.get(nextSelection.id);
+    const node = graph?.nodeById?.get(nextSelection.id);
     track("graph_node_selected", {
       node_type: nextSelection.type,
       node_label: node?.label || nextSelection.id,
@@ -62,13 +117,13 @@ function App() {
     }
   }, [handleSelect, selected, selectedSkillIds]);
 
-  const selectedNode = selected ? graph.nodeById.get(selected.id) : null;
+  const selectedNode = selected ? graph?.nodeById?.get(selected.id) : null;
   const galaxySelection = relatedJobId ? { id: relatedJobId, type: "job" } : selected;
   const selectedCategory =
     selectedNode?.type === "category"
       ? selectedNode
       : selectedNode?.type === "job"
-        ? graph.nodeById.get(selectedNode.categoryId)
+        ? graph?.nodeById?.get(selectedNode.categoryId)
         : null;
   const handleLayerViewChange = useCallback((nextView) => {
     if (nextView === layerView) {
@@ -93,60 +148,92 @@ function App() {
     setSkillViewMode(nextMode);
   }, []);
 
+    if (!graph || loading) {
+    return (
+      <main className="app-shell">
+        <header className="site-header">
+          <a className="brand" href="#top" aria-label="GoodJob 首页">
+            <span className="brand-mark"><Sparkles size={16} /></span>
+            <strong>GoodJob</strong>
+            <small>Web Mining Group1</small>
+          </a>
+          <JobSearch disabled />
+        </header>
+        <section className="workspace" id="explore">
+          <div className="visualization-column">
+            <CompanyToolbar
+              companyKey={companyKey}
+              onChange={handleCompanyChange}
+              disabled
+            />
+            <div className="scene-wrap">
+              <div className="loading-spinner" />
+            </div>
+          </div>
+          <aside className="info-panel">
+            <div className="panel-section">
+              <p className="panel-kicker">加载数据</p>
+              <h2>正在加载岗位数据...</h2>
+              <p className="muted">请稍候，正在获取公司招聘信息。</p>
+            </div>
+          </aside>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="JobCloud 首页">
+        <a className="brand" href="#top" aria-label="GoodJob 首页">
           <span className="brand-mark"><Sparkles size={16} /></span>
-          <strong>JobCloud</strong>
-          <small>岗位技能情报站</small>
+          <strong>GoodJob</strong>
+          <small>Web Mining Group1</small>
         </a>
-        <a className="header-link" href="#explore">
-          探索图谱 <ArrowDownRight size={15} />
-        </a>
+        <JobSearch graph={graph} onSelect={handleSelect} />
       </header>
 
       <section className="hero-panel" id="top">
         <div className="title-block">
-          <span className="eyebrow"><span /> 真实岗位数据 · 动态技能图谱</span>
           <h1>看见岗位之间的<br /><em>隐形连接</em></h1>
           <p>
             把分散的职位描述变成一张可探索的技能星图。快速比较岗位大类、技能热度与职业方向，找到下一步最值得投入的能力。
           </p>
-          <a className="hero-cta" href="#explore" onClick={() => track("explore_started")}>
-            开始探索 <ArrowDownRight size={17} />
-          </a>
         </div>
         <div className="metric-grid" aria-label="数据概览">
-          <Metric icon={<BriefcaseBusiness />} label="岗位" value={graph.stats.totalJobs} />
+          <Metric icon={<BriefcaseBusiness />} label="招聘发布" value={graph.stats.totalJobs} />
+          <Metric icon={<Building2 />} label="岗位角色" value={graph.stats.roleCount ?? graph.jobs.length} />
           <Metric icon={<Layers3 />} label="大类" value={graph.categories.length} />
           <Metric icon={<Activity />} label="技能" value={graph.skills.length} />
-          <Metric icon={<Search />} label="完整度" value={`${graph.stats.completeRate}%`} />
+          <Metric icon={<Search />} label="描述完整度" value={`${graph.stats.completeRate}%`} />
         </div>
       </section>
 
       <section className="workspace" id="explore">
-        <div className="scene-wrap">
-          <ViewToggle activeView={layerView} onChange={handleLayerViewChange} />
-          {layerView === "skill" && (
-            <SkillViewToggle activeView={skillViewMode} onChange={handleSkillViewModeChange} />
-          )}
-          {layerView === "skill" && skillViewMode === "dag" ? (
-            <SkillDag
-              graph={graph}
-              selectedSkillIds={masteredSkillIds}
-              onToggleSkill={handleToggleMasteredSkill}
-            />
-          ) : (
-            <JobGalaxy
-              graph={graph}
-              selected={galaxySelection}
-              selectedSkillIds={selectedSkillIds}
-              onSelect={handleSelect}
-              layerView={layerView}
-              skillCategoryFilterId={selectedNode?.type === "skill" ? skillCategoryFilterId : null}
-            />
-          )}
+        <div className="visualization-column">
+          <CompanyToolbar companyKey={companyKey} onChange={handleCompanyChange} />
+          <div className="scene-wrap">
+            <ViewToggle activeView={layerView} onChange={handleLayerViewChange} />
+            {layerView === "skill" && (
+              <SkillViewToggle activeView={skillViewMode} onChange={handleSkillViewModeChange} />
+            )}
+            {layerView === "skill" && skillViewMode === "dag" ? (
+              <SkillDag
+                graph={graph}
+                selectedSkillIds={masteredSkillIds}
+                onToggleSkill={handleToggleMasteredSkill}
+              />
+            ) : (
+              <JobGalaxy
+                graph={graph}
+                selected={galaxySelection}
+                selectedSkillIds={selectedSkillIds}
+                onSelect={handleSelect}
+                layerView={layerView}
+                skillCategoryFilterId={selectedNode?.type === "skill" ? skillCategoryFilterId : null}
+              />
+            )}
+          </div>
         </div>
         {layerView === "skill" && skillViewMode === "dag" ? (
           <SkillDagPanel
@@ -171,6 +258,141 @@ function App() {
         )}
       </section>
     </main>
+  );
+}
+
+function CompanyToolbar({ companyKey, onChange, disabled = false }) {
+  return (
+    <div className="company-toolbar">
+      <div className="company-toolbar-copy">
+        <strong>招聘数据源</strong>
+        <span>点击切换公司</span>
+      </div>
+      <div className="company-selector" role="tablist" aria-label="选择公司">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={companyKey === "all"}
+          className={companyKey === "all" ? "active" : ""}
+          disabled={disabled}
+          onClick={() => onChange("all")}
+        >
+          <Building2 size={14} />
+          全部
+        </button>
+        {COMPANY_KEYS.map((key) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={companyKey === key}
+            className={companyKey === key ? "active" : ""}
+            disabled={disabled}
+            onClick={() => onChange(key)}
+          >
+            {COMPANY_CONFIGS[key].LABEL}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function JobSearch({ graph = null, onSelect, disabled = false }) {
+  const rootRef = useRef(null);
+  const inputRef = useRef(null);
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const results = useMemo(
+    () => (graph && query.trim() ? searchJobs(graph, query, 12) : []),
+    [graph, query],
+  );
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", handleOutsideClick);
+    return () => document.removeEventListener("pointerdown", handleOutsideClick);
+  }, []);
+
+  const selectJob = (job) => {
+    onSelect?.({ id: job.id, type: "job" });
+    setOpen(false);
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    if (results[0]) selectJob(results[0]);
+  };
+
+  return (
+    <div className="header-search" ref={rootRef}>
+      <form role="search" onSubmit={handleSubmit}>
+        <Search size={17} aria-hidden="true" />
+        <input
+          ref={inputRef}
+          type="search"
+          value={query}
+          disabled={disabled}
+          placeholder={disabled ? "正在准备岗位搜索..." : "搜索岗位、技能、类别或公司"}
+          aria-label="搜索岗位"
+          aria-expanded={open && Boolean(query.trim())}
+          aria-controls="job-search-results"
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setOpen(false);
+              inputRef.current?.blur();
+            }
+          }}
+        />
+        {query ? (
+          <button
+            className="search-clear"
+            type="button"
+            aria-label="清除搜索"
+            onClick={() => {
+              setQuery("");
+              inputRef.current?.focus();
+            }}
+          >
+            ×
+          </button>
+        ) : null}
+      </form>
+      {open && query.trim() ? (
+        <div className="search-results" id="job-search-results" role="listbox">
+          {results.length > 0 ? (
+            <>
+              <div className="search-results-count">显示最相关的 {results.length} 个岗位角色</div>
+              {results.map((job) => {
+                const category = graph.nodeById.get(job.categoryId);
+                return (
+                  <button
+                    key={job.id}
+                    type="button"
+                    role="option"
+                    onClick={() => selectJob(job)}
+                  >
+                    <strong>{job.label}</strong>
+                    <span>
+                      {job.sourceLabel} · {category?.label || "其他"} · {job.postingCount} 个招聘发布
+                    </span>
+                  </button>
+                );
+              })}
+            </>
+          ) : (
+            <p>没有匹配的岗位角色</p>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -265,57 +487,16 @@ function InfoPanel({
   }
 
   if (selectedNode.type === "job") {
-    const job = selectedNode;
-    const ranking = graph.skillRankingByCategory.get(job.categoryId) || [];
-    const categoryFrequency = new Map(ranking.map((item) => [item.id, item.count]));
-    const sortedSkills = job.skillIds
-      .map((id) => graph.nodeById.get(id))
-      .filter(Boolean)
-      .sort((a, b) => (categoryFrequency.get(b.id) || 0) - (categoryFrequency.get(a.id) || 0));
-
     return (
-      <InfoShell
+      <JobRolePanel
         graph={graph}
-        activeCategoryId={selectedCategory?.id}
+        job={selectedNode}
+        category={selectedCategory}
         skillOverview={showSkillOverview}
         selectedSkillIds={selectedSkillIds}
-        onPieCategoryChange={onCategorySelect}
+        onCategorySelect={onCategorySelect}
         onSkillSelect={onSkillSelect}
-      >
-        <div className="panel-section">
-          <p className="panel-kicker">职位</p>
-          <h2>{job.label}</h2>
-          <p className="muted">所属大类：{selectedCategory?.label || "其他"}</p>
-          <a
-            className="primary-link"
-            href={job.url}
-            target="_blank"
-            rel="noreferrer"
-            onClick={() => trackJobLink(job)}
-          >
-            查看原始岗位
-          </a>
-        </div>
-        <div className="panel-section">
-          <h3>技能要求</h3>
-          {sortedSkills.length > 0 ? (
-            <div className="skill-cloud">
-              {sortedSkills.map((skill) => (
-                <span key={skill.id}>
-                  {skill.label}
-                  <b>{categoryFrequency.get(skill.id) || 1}</b>
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">这条岗位没有命中当前技能词典，可在词典配置中补充关键词。</p>
-          )}
-        </div>
-        <div className="panel-section">
-          <h3>职位要求摘要</h3>
-          <p className="requirement-text">{job.requirement || "暂无职位要求文本。"}</p>
-        </div>
-      </InfoShell>
+      />
     );
   }
 
@@ -336,6 +517,58 @@ function InfoPanel({
   }
 
   return null;
+}
+
+function JobRolePanel({
+  graph,
+  job,
+  category,
+  skillOverview,
+  selectedSkillIds,
+  onCategorySelect,
+  onSkillSelect,
+}) {
+  const ranking = graph.skillRankingByCategory.get(job.categoryId) || [];
+  const categoryFrequency = new Map(ranking.map((item) => [item.id, item.count]));
+  const sortedSkills = job.skillIds
+    .map((id) => graph.nodeById.get(id))
+    .filter(Boolean)
+    .sort((a, b) => (categoryFrequency.get(b.id) || 0) - (categoryFrequency.get(a.id) || 0));
+  const detailState = useRoleDetails(job);
+
+  return (
+    <InfoShell
+      graph={graph}
+      activeCategoryId={category?.id}
+      skillOverview={skillOverview}
+      selectedSkillIds={selectedSkillIds}
+      onPieCategoryChange={onCategorySelect}
+      onSkillSelect={onSkillSelect}
+    >
+      <div className="panel-section">
+        <p className="panel-kicker">岗位角色</p>
+        <h2>{job.label}</h2>
+        <p className="muted">所属大类：{category?.label || "其他"}</p>
+        <RoleSummary job={job} />
+      </div>
+      <div className="panel-section">
+        <h3>技能要求</h3>
+        {sortedSkills.length > 0 ? (
+          <div className="skill-cloud">
+            {sortedSkills.map((skill) => (
+              <span key={skill.id}>
+                {skill.label}
+                <b>{categoryFrequency.get(skill.id) || 1}</b>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">这条岗位没有命中当前技能词典，可在词典配置中补充关键词。</p>
+        )}
+      </div>
+      <RoleDetails job={job} {...detailState} />
+    </InfoShell>
+  );
 }
 
 function CategoryPanel({
@@ -576,7 +809,11 @@ const CategoryPieChart = React.memo(function CategoryPieChart({
       ];
     }
 
-    const total = filteredJobs ? filteredJobs.length || 1 : skill ? graph.jobsBySkill.get(skill.id)?.length || 1 : graph.stats.totalJobs || 1;
+    const total = filteredJobs
+      ? filteredJobs.length || 1
+      : skill
+        ? graph.jobsBySkill.get(skill.id)?.length || 1
+        : graph.stats.roleCount || graph.jobs.length || 1;
     const jobsByCategory = skill ? graph.jobsBySkillAndCategory.get(skill.id) : graph.jobsByCategory;
     return graph.categories
       .map((category) => {
@@ -836,27 +1073,81 @@ function JobListItem({ job, category, active, onToggle }) {
 }
 
 function JobInfoCard({ job, category, embedded = false }) {
+  const detailState = useRoleDetails(job);
   return (
     <div className={embedded ? "selected-job-card embedded" : "panel-section selected-job-card"}>
-      <p className="panel-kicker">岗位信息</p>
+      <p className="panel-kicker">岗位角色</p>
       <h3>{job.label}</h3>
       <p className="muted">所属大类：{category?.label || "其他"}</p>
-      <a
-        className="primary-link"
-        href={job.url}
-        target="_blank"
-        rel="noreferrer"
-        onClick={() => trackJobLink(job)}
-      >
-        查看原始岗位
-      </a>
+      <RoleSummary job={job} />
+      <RoleDetails job={job} compact {...detailState} />
+    </div>
+  );
+}
+
+function RoleSummary({ job }) {
+  return (
+    <div className="role-summary">
+      <span>{job.postingCount} 个招聘发布</span>
+    </div>
+  );
+}
+
+function useRoleDetails(job) {
+  const [state, setState] = useState({ details: null, loading: true, error: null });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ details: null, loading: true, error: null });
+    loadRoleDetails(job.source, job.roleId)
+      .then((details) => {
+        if (!cancelled) setState({ details, loading: false, error: details ? null : "未找到岗位详情" });
+      })
+      .catch((error) => {
+        if (!cancelled) setState({ details: null, loading: false, error: error.message });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [job.source, job.roleId]);
+
+  return state;
+}
+
+function RoleDetails({ job, details, loading, error, compact = false }) {
+  const className = compact ? "role-details compact" : "panel-section role-details";
+  if (loading) {
+    return <div className={className}><p className="muted">正在加载完整职位描述和招聘链接...</p></div>;
+  }
+  if (error || !details) {
+    return <div className={className}><p className="muted">岗位详情加载失败：{error || "未知错误"}</p></div>;
+  }
+  return (
+    <div className={className}>
       <div className="job-detail-block">
         <h4>职位描述</h4>
-        <p>{job.description || "暂无职位描述文本。"}</p>
+        <p>{details.description || "暂无职位描述文本。"}</p>
       </div>
       <div className="job-detail-block">
         <h4>职位要求</h4>
-        <p>{job.requirement || "暂无职位要求文本。"}</p>
+        <p>{details.requirement || "暂无职位要求文本。"}</p>
+      </div>
+      <div className="job-detail-block">
+        <h4>招聘链接</h4>
+        <div className="role-variants">
+          {details.variants.map((variant, index) => (
+            <a
+              key={`${variant.job_id}:${index}`}
+              href={variant.url}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => trackJobLink({ ...job, jobId: variant.job_id, url: variant.url })}
+            >
+              <strong>{variant.title}</strong>
+              <small>{variant.display_job_id || variant.job_id}</small>
+            </a>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -883,6 +1174,7 @@ function trackJobLink(job) {
   track("job_link_opened", {
     job_id: job.id,
     job_title: job.label,
+    source: job.source,
   });
 }
 
