@@ -464,24 +464,8 @@ function targetNodePosition(node, selectedNode, layerView) {
     return layerView === "skill" && node.type !== "job" ? { ...node, y: -node.y } : node;
   }
 
-  const skillIndex = selectedNode.skillIds.indexOf(node.id);
-  if (skillIndex < 0) {
-    return layerView === "skill" ? { ...node, y: -node.y } : node;
-  }
-
-  const total = selectedNode.skillIds.length;
-  const ring = skillIndex % 2;
-  const ringIndex = Math.floor(skillIndex / 2);
-  const ringTotal = Math.ceil(total / 2);
-  const angleSpan = Math.min(Math.PI * 1.35, Math.PI * (0.72 + total * 0.055));
-  const angle = -Math.PI / 2 - angleSpan / 2 + (ringIndex / Math.max(ringTotal - 1, 1)) * angleSpan + ring * 0.16;
-  const radius = 17 + Math.min(total, 12) * 1.35 + ring * 5.5;
-
-  return {
-    x: selectedNode.x + Math.cos(angle) * radius,
-    y: selectedNode.y + (layerView === "skill" ? 1 : -1) * (21 + ring * 2.5),
-    z: selectedNode.z + Math.sin(angle) * radius,
-  };
+  // Skills stay fixed at their original positions
+  return layerView === "skill" ? { ...node, y: -node.y } : node;
 }
 
 function updateFixedLabels(layer, labelData, objectMap, camera, renderer) {

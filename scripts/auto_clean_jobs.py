@@ -1,427 +1,397 @@
-﻿#!/usr/bin/env python3
-"""
-Auto-clean job data: filter out non-CS jobs from raw data files,
-then trigger rebuild of processed data.
-
-Usage:
-    python scripts/auto_clean_jobs.py               # dry-run: report what would be removed
-    python scripts/auto_clean_jobs.py --execute       # actually filter and rebuild
-"""
-
-import json
-import os
-import subprocess
-import sys
+﻿#!/usr/bin/env python
+'''
+Final version - removes non-CS jobs with minimal false positives.
+'''
+import json, os, shutil, subprocess, sys
 from pathlib import Path
 from typing import List, Dict, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
-PROCESSED_DIR = DATA_DIR / "processed"
 
-# ---------------------------------------------------------------------------
-# Configuration: which raw files to process
-# ---------------------------------------------------------------------------
 RAW_FILES = {
-    "bilibili": "bilibili_tech_jobs.json",
-    "bytedance": "bytedance_jobs.json",
-    "tencent": "tencent_jobs.json",
-    "xiaomi": "xiaomi_tech_jobs.json",
-    "jd": "jd_tech_jobs.json",
-    "meituan": "meituan_tech_jobs.json",
-    "mihoyo": "mihoyo_tech_jobs.json",
+    "bilibili":  "bilibili_tech_jobs.json",
+    "bytedance":  "bytedance_jobs.json",
+    "tencent":    "tencent_jobs.json",
+    "xiaomi":     "xiaomi_tech_jobs.json",
+    "jd":         "jd_tech_jobs.json",
+    "meituan":    "meituan_tech_jobs.json",
+    "mihoyo":     "mihoyo_tech_jobs.json",
 }
 
-# ---------------------------------------------------------------------------
-# Title-level INCLUDE overrides — if found in the title, KEEP the job no
-# matter what other exclusions are present. This is the strongest signal
-# and runs before any exclusion check.
-# ---------------------------------------------------------------------------
-OVERRIDE_TITLE_INCLUDE = [
-    # Software roles
-    "软件工程师", "软件开发", "软件研发", "软件测试", "软件质量",
-    "算法工程师", "算法专家", "算法研究员",
-    "驱动软件", "固件", "Firmware",
-    "研发Leader", "研发工程师", "开发工程师", "技术Leader",
-    "架构师", "架构工程师", "解决方案架构",
-    "测试开发", "测试工程",
-    "数据工程师", "数据分析师", "数据科学家", "数据开发",
-    "安全工程师", "安全开发", "安全技术", "安全审计工程师", "火山引擎",
-    "运维工程师", "运维开发", "SRE",
-    "后端", "前端", "全栈", "客户端",
-    # AI / ML
-    "AI", "大模型", "Agent", "机器学习", "深度学习", "NLP", "CV",
-    # Systems
-    "编译器", "LLVM", "内核",
-    "网络研发", "网络协议", "网络架构", "CDN", "负载均衡",
-    # Auto software
-    "自动驾驶", "感知", "规划算法", "控制算法", "SLAM",
-    "座舱软件", "车机", "OTA软件",
-    # Management (tech)
-    "技术项目经理", "技术经理", "技术总监", "研发总监",
-]
-
-# ---------------------------------------------------------------------------
-# Full-text INCLUDE overrides — if found anywhere in title+description+requirements,
-# KEEP the job. Runs after title-level includes but before exclusions.
-# ---------------------------------------------------------------------------
-OVERRIDE_INCLUDE_KEYWORDS = [
-    # Programming languages (with spaces to avoid partial matches like "C1")
-    "C/C++", "Java", "Python", "Golang", "Go语言", "Rust", "JavaScript", "TypeScript",
-    "Scala", "Kotlin", "Swift", "Objective-C", "Dart", "Flutter",
-    # Web
-    "React", "Vue", "Webpack", "Vite", "Node.js", "HTML/CSS",
-    # Cloud/Infra
+SOFTWARE_SIGNALS = [
+    "C/C++", "C语言", "Java", "Python", "Golang", "Go语言", "Rust",
+    "JavaScript", "TypeScript", "Scala", "Kotlin", "Swift", "Objective-C",
+    "Dart", "Flutter", "React", "Vue", "Webpack", "Vite", "Node.js",
+    "HTML", "CSS", "小程序", "H5",
     "Kubernetes", "K8s", "Docker", "微服务", "RPC", "Service Mesh",
-    # AI/ML
+    "CI/CD", "DevOps", "SRE", "Git",
+    "分布式系统", "高并发", "云原生", "Serverless",
     "机器学习", "深度学习", "PyTorch", "TensorFlow", "Transformer",
     "LLM", "大模型", "大语言模型", "NLP", "CV", "AIGC", "Agent", "RAG",
     "SFT", "RLHF", "Fine-Tuning", "Prompt Engineering",
-    # Big Data
+    "神经网络", "模型训练", "模型推理", "模型优化",
     "Spark", "Flink", "Hadoop", "Kafka", "Hive", "ClickHouse",
     "数据湖", "数据仓库", "OLAP", "ETL",
-    # Databases
     "MySQL", "Redis", "PostgreSQL", "MongoDB", "HBase", "Elasticsearch",
-    "SQL优化", "数据库内核", "分布式数据库",
-    # Systems
-    "分布式系统", "高并发", "Linux内核", "操作系统内核",
-    "编译器", "LLVM", "GCC", "RISC-V",
-    # Chip / embedded
-    "芯片设计", "SoC", "RTL", "Verilog", "VHDL",
-    "嵌入式软件", "Firmware", "固件",
-    "驱动开发", "BSP", "底软",
-    # Auto software
+    "SQL", "数据库内核", "分布式数据库",
+    "Linux内核", "操作系统内核", "编译器", "LLVM", "GCC", "RISC-V",
+    "协议栈", "SDN", "BGP", "OSPF",
+    "Android", "iOS", "APP开发", "SDK",
+    "RTL", "Verilog", "VHDL", "EDA",
+    "嵌入式软件", "Firmware", "固件", "驱动开发", "BSP", "底软",
+    "MCU驱动", "HIL测试", "AUTOSAR",
     "自动驾驶算法", "感知算法", "规划控制", "SLAM", "定位算法",
-    "域控软件", "车载软件", "OTA", "座舱软件", "车机系统",
-    "MCU驱动", "HIL测试", "BMS软件", "动力域软件",
-    "车载语音", "车载AI", "车联网",
-    # General software engineering
-    "CI/CD", "DevOps", "SRE", "Git", "Code Review",
-    "系统架构设计", "技术方案", "源码",
-    # Game dev
+    "域控软件", "车载软件", "OTA ", "OTA升级", "座舱软件", "车机系统",
+    "BMS软件", "动力域软件", "车载语音", "车载AI", "车联网",
+    "软件开发", "软件研发", "软件工程", "软件测试", "软件质量",
+    "代码", "编程", "源码", "Code Review","研发",
+    "系统架构设计", "技术方案", "算法设计", "算法优化",
+    "API设计", "后端开发", "前端开发", "全栈", "客户端开发",
+    "算法工程师", "算法专家", "算法研究员",
+    "数据工程师", "数据分析师", "数据科学家", "数据开发",
+    "安全工程师", "安全开发", "安全技术", "安全审计",
+    "运维工程师", "运维开发", "架构师", "架构设计",
+    "技术项目经理", "技术经理", "技术总监", "研发总监",
     "Unity", "Unreal", "Cocos", "游戏引擎",
+    "芯片设计", "SoC", "DDR", "高速接口", "触控芯片",
+    "数字前端", "数字后端", "数字验证",
+    "自动化测试", "压力测试", "单元测试", "集成测试",
+    "接口测试", "性能测试", "测试工具",
 ]
 
-# ---------------------------------------------------------------------------
-# EXCLUDE_TITLE_KEYWORDS — if a keyword appears in the job title AND no
-# INCLUDE override has matched, the job is excluded.
-# These must be specific enough to avoid false positives.
-# ---------------------------------------------------------------------------
-EXCLUDE_TITLE_KEYWORDS = [
-    # === Automotive / vehicle MANUFACTURING roles (not software) ===
-    "发动机缸盖", "发动机缸体", "发动机曲轴", "发动机正时",
-    "发动机耐火", "发动机NVH", "发动机台架", "发动机试验",
-    "变速箱", "减速器机械", "减速器NVH",
-    "悬架系统", "减振器", "制动系统", "制动DRE",
-    "轮胎", "轮辋", "底盘电控",
-    "冷却系统", "润滑系统", "空调系统",
-    "空调系统工程师", "热管理系统工程师",
-    "车身工程师", "车身工艺", "车身生产",
-    "外饰工程师", "外饰灯具", "内饰零部件", "座椅DRE",
-    "车门系统", "尾门系统", "玻璃系统",
-    "保险杠工程师", "碳纤维装饰",
-    "线束工程师", "线束开发", "高压线束",
-    "进气系统", "排气系统",
-    "整车防腐", "整车NVH", "整车碰撞",
-    "焊装", "涂装", "总装", "冲压", "压铸", "钣金",
-    "生产制造", "生产经理", "生产工段", "返修",
-    "电驱减速箱", "电机机械设计", "电机电磁",
-    "大功率板载电源", "DC-DC", "OBC",
-    "增程器", "增程能量",
-    "车载电源磁件", "车载电源结构",
-    "热管理零部件", "压缩机开发",
-    "耐久属性", "能量流开发",
-    "运动控制集成", "运动集成控制",
-    "底盘高压管路", "底盘减振器",
-    "腐蚀", "NVH试验", "耐久试验", "结构耐久",
+TITLE_CS_PATTERNS = [
+    "安全攻防", "安全SE", "安全策略", "渗透测试", "漏洞",
+    "安全研发", "SDLC", "红蓝对抗", "安全合规",
+    "网络安全方案", "终端安全运营",
+    "应用和框架安全", "办公安全", "IT安全",
+    "RTL设计", "数字IC", "模拟IC", "射频模拟芯片", "RFIC",
+    "SOC设计", "NPU设计", "GPU设计",
+    "嵌入式", "Firmware", "固件", "BSP", "底软", "RTOS",
+    "MCU", "单片机",
+    "数据产品经理", "数据产品专家", "数仓产品", "数字化产品", "售后数字化",
+    "图形算法", "渲染开发", "3A渲染", "shader",
+    "GPU渲染", "OpenGL", "Vulkan", "DirectX",
+    "技术经理", "技术总监", "研发经理", "研发总监",
+    "品牌官网", "UI设计", "交互设计",
+    "电机控制器应用", "电机控制器系统",
+    "OTA车端", "DDR设计", "AI产品经理",
+    "智能驾驶产品", "自动驾驶产品",
+    "芯片设计", "芯片硬件测试", "芯片应用",
+    "穿戴高级软件", "智能网联",
+    "数据产品", "产品运营",
+    "影像算法", "影像测评",
+    "多媒体效果", "音频调试",
+    "测试开发", "测试工程", "测试架构", "VMOS",
+    "充电功能开发",
+]
 
-    # === Retail / store operations ===
-    "零售顾问", "零售主管", "零售经理", "门店运营", "门店管理", "面销",
+XIAOMI_HARD_EXCLUDE = [
+    "热管理零部件", "热管理属性",
+    "整车泛化测试-道路", "整车泛化测试-智驾",
+    "整车道路试验",
+    "结构耐撞", "乘员保护",
+    "内饰工程师", "内饰测试", "硬内饰",
+    "外饰测试", "外饰装饰", "外饰集成",
+    "座椅舒适性",
+    "车门结构", "门把手", "门锁",
+    "开闭件", "密封系统",
+    "软饰开发",
+    "上车体布置",
+    "动力系统验证",
+    "电池系统工程师", "电芯平台",
+    "电驱集成管理", "电驱总成机械",
+    "加热器开发",
+    "压缩机开发",
+    "能量流开发",
+    "Pack工艺",
+    "减速器机械", "减速箱",
+    "发动机系统", "发动机旋转",
+    "增程器",
+    "智能制造-纤维",
+    "焊装", "涂装", "总装", "冲压", "压铸", "钣金",
+    "生产制造", "生产经理", "生产工段",
+    "整车功能测试", "道路测试工程师",
+    "试验工程师",
+    "电性能及EMC", "电气性能",
+    "可靠性测试开发",
+    "结构设计审核",
+    "硬件设计审核",
+    "零部件设计总监",
+    "质量工程师-整车", "质量部-车型",
+    "先进动力研发质量", "先进动力质量",
+    "系统质量促进-整车硬件",
+    "硬件工程师-电池",
+    "硬件工程师-电驱", "硬件工程师-电控",
+    "硬件工程师-车载电源",
+    "硬件工程师-BMS",
+    "车载电源硬件",
+    "资深外饰设计师", "汽车零部件设计总监",
+    "造型设计", "国际汽车创意",
+    "线上服务专员", "服务质量专员",
+    "线上技术专家", "在线技术专家",
+    "中央技术支持", "区域技术支持",
+    "资产及预算", "车周边供应链",
+    "产品传播",
+    "新媒体运营", "新媒体能力", "新媒体管理",
+    "视频设计-导演",
+    "投资经理", "商务拓展经理", "商务经理",
+    "分公司服务经理",
+    "机电工程师",
+    "网络规划高级经理",
+    "产品数据管理-CAD", "产品数据管理-MBOM",
+    "工程配置管理",
+    "供应商流程",
+    "流程落地实施", "项目管理（国际",
+    "资源管理工程师",
+    "产品经理-整车方向", "产品经理（整车方向",
+    "产品经理-性能方向",
+    "影音产品负责人",
+    "音响产品经理",
+    "系统测试工程师-WiFi TSE",
+    "系统测试工程师-蓝牙",
+    "系统测试PM",
+    "硬件工艺-显示",
+    "可靠性高工", "可靠性工程师",
+    "基带高工", "基带工程师",
+    "天线工程师", "天线专家", "天线高工",
+    "射频硬件工程师", "射频高工", "器件规划",
+    "结构工程师", "结构高工",
+    "结构专家（非",
+    "高级仿真",
+    "失效分析", "板级可靠性",
+    "模组可靠性",
+    "硬件研发工程师-Sensor", "硬件研发工程师-光学",
+    "硬件研发工程师-架构", "硬件研发工程师-马达",
+    "摄像头硬件", "耳机产品专家",
+    "可穿戴整机结构", "大硬件经理",
+    "智能硬件功能件", "显示面板", "面板光学",
+    "手机COE", "手机部-架构", "笔记本SA",
+    "机器人结构", "机器人机械",
+    "机器人灵巧", "机器人电机",
+    "机器人高级ID",
+    "机器人可靠性仿真",
+    "硬件&网络设备采购",
+    "高级结构专家",
+    "Store Display", "Senior Global Product PR",
+    "短剧专家",
+    "策划经理", "策划",
+    "用户体验洞察",
+    "海外运营", "海外分期", "流量变现",
+    "PMO", "OPS-",
+    "商网负责人",
+    "资深硬件专家", "CMF", "动画师", "原画",
+    "RMPV-", "制造储备",
+    "全球品牌",
+    "合规经理", "品牌公关",
+    "车间管理",
+    "设备管理", "车间主任",
+    "动力总成", "动力系统专家",
+    "整车能量管理", "整车硬件部",
+    "整车空调", "整车高压",
+    "异响",
+    "技术服务专员", "售后技术",
+    "标定工程师", "匹配工程师",
+    "试验策划", "试验策划工程师",
+]
+
+EXCLUDE_TITLE_PATTERNS = [
+    "零售", "门店", "米家", "面销", "销售顾问", "事故顾问",
     "体验专家", "体验管理", "服务顾问", "服务主管", "服务派驻",
     "交付专员", "交付顾问", "交付保障", "交付接待", "交付预约",
-    "网格主管", "区域经理（", "城市负责人", "米家负责人",
-    "手机品类储备干部", "新零售米家",
-    "销售顾问", "事故顾问",
-    "售后工程师", "维修工程师", "技术支持岗", "冰洗技术支持专家", "小家电售后技术支持岗", "技术支持岗", "维修技师",
-    "PDI管理", "PDI质量管理", "配件索赔", "备件",
-    "钣金技师", "钣金工程师", "机电顾问", "机电服务顾问",
-    "用户体验专家", "用户体验运营", "服务体验",
-    "事故服务顾问", "事故顾问",
-    "服务培训高级经理", "机电技术培训",
-
-    # === Marketing / brand / content ===
+    "交付运营", "交付区域", "交付经理", "交付体验", "交付服务",
+    "国家交付负责人",
+    "网格主管", "城市负责人", "储备干部",
+    "售后工程师", "维修工程师", "维修技师",
+    "冰洗技术支持", "小家电售后",
+    "PDI", "配件索赔", "备件供需", "钣金技师", "钣金工程师",
+    "机电顾问", "机电服务顾问",
+    "用户体验运营", "事故服务顾问",
+    "服务培训", "机电技术培训",
+    "服务洞察经理", "服务技术主管",
+    "售后质量工程师", "售前工程师",
+    "空调产品技术支持", "大家电",
+    "旗舰店", "展厅",
+    "在线技术主管-售后",
     "整合营销", "品牌传播", "品牌策略", "品牌营销", "品牌内容",
     "内容策划", "内容传播", "创意策划", "短视频策划",
     "社交媒体", "效果广告运营", "直播营销",
     "GTM", "品类运营", "渠道管理", "渠道经理",
     "电商经理", "电商运营", "天猫", "京东渠道",
     "市场调研", "市场洞察", "公关经理", "舆情",
-    "营销策划专家", "营销经理",
-    "传播操盘手", "品牌市场营销", "国际内容营销",
-    "汽车运动营销", "行销经理",
-
-    # === HR / admin / finance / legal ===
+    "营销策划", "营销经理", "传播操盘手",
+    "品牌市场", "国际内容营销", "汽车运动营销", "行销经理",
     "招聘经理", "招聘主管", "招聘专家", "高招", "HRBP",
     "培训运营", "培训师", "培训项目设计", "课程开发",
-    "人才发展", "企业文化", "薪酬策略",
+    "培训中心", "人才发展", "企业文化", "薪酬策略",
     "财务BP", "费用BP", "内控经理", "成本经理", "成本分析",
+    "渠道财经",
     "法务", "专利工程师", "知识产权",
     "公共事务", "政府关系",
-    "行政", "办公室管理", "Office Administrator",
+    "行政", "办公室管理",
     "薪酬福利", "绩效管理", "员工关系",
-
-    # === Non-software hardware / industrial ===
-    "非标自动化",
-    "装配工艺", "涂胶工艺", "焊接工程师",
-    "结构工程师（非芯片", "结构设计（非芯片",
-    "电机机械设计", "减速器机械", "机械集成",
-    "材料开发", "材料专家", "电解液", "隔膜",
-    "热设计", "散热", "热仿真",
+    "人力资源经理", "人才招募",
+    "发动机", "变速箱", "减振器", "制动系统", "制动DRE",
+    "轮胎", "轮辋", "底盘电控", "底盘高压",
+    "冷却系统", "润滑系统",
+    "车身工程", "车身工艺", "车身生产",
+    "外饰工程", "外饰灯具", "内饰零", "座椅DRE",
+    "车门系统", "尾门系统", "保险杠", "碳纤维装饰",
+    "线束", "高压线束",
+    "进气系统", "排气系统",
+    "整车防腐", "整车NVH", "整车碰撞", "整车高压",
+    "电机机械设计", "电机电磁",
+    "大功率板载电源", "DC-DC", "OBC",
+    "增程器", "增程能量", "车载电源磁件", "车载电源结构",
+    "热管理零部件", "热管理属性",
+    "耐久属性", "能量流开发",
+    "运动控制集成", "运动集成控制",
+    "腐蚀", "NVH试验", "耐久试验", "压缩机",
+    "电芯", "隔膜",
+    "整车工程-轮胎", "整车方向（非",
+    "性能方向（非",
+    "橡胶", "声学器件",
+    "动态性能开发", "动态性能调校",
+    "音响系统", "音响产品",
+    "车辆动力学",
+    "结构耐久试验",
+    "钙钛矿", "光伏", "太阳能电池",
+    "非标自动化", "装配工艺", "涂胶工艺", "焊接工程师",
+    "结构工程师（非", "结构设计（非",
+    "机械集成", "机械开发",
+    "材料工程师", "材料开发", "材料专家", "电解液",
     "外观工艺", "CMF设计师",
     "模具工程师", "模修",
-    "工艺研发工程师", "工艺工程师",
-
-    # === Non-tech design / animation ===
-    "动捕动画师", "角色原画", "场景原画", "展陈设计",
-    "CMF设计",
-    "创意设计（汽车", "汽车造型设计",
-    "CAS Modeller", "Exterior Designer（Automotive",
-
-    # === Logistics / supply chain (non-software) ===
-    "物流工程师", "物流规划", "仓库管理", "仓储物流",
-    "物料跟踪", "物料工程师", "采购经理", "采购运营",
+    "资源管理工程师（非",
+    "半导体资源开发",
+    "物流", "仓储", "仓库",
+    "物料跟踪", "物料工程师", "物料计划",
+    "采购经理", "采购运营", "采购工程师",
     "供应商质量", "SQE", "SIE",
     "整车物流", "售后配件", "配件调拨",
-    "资源管理工程师（非软件", "供应链直采",
-    "采购经理-电子架构", "采购运营-电子架构",
-    "半导体资源开发经理",
-
-    # === Miscellaneous non-tech ===
-    "二手车", "事故车", "展厅", "参观接待",
-    "工业旅游", "研学", "审计", "合规",
-    "中央空调", "冰洗", "大家电", "厨电", "小家电",
-    "空调渠道", "空调售前", "智能硬件灯具",
-    "汽车销交服", "交付运营", "交付区域",
+    "动捕动画师", "角色原画", "场景原画", "展陈设计",
+    "汽车造型设计",
+    "CAS Modeller", "Exterior Designer（",
+    "二手车", "事故车", "参观接待", "工业旅游", "研学",
+    "审计", "内控", "中央空调", "冰洗", "大家电", "厨电",
+    "汽车销交服",
     "区域EHS", "环境安全", "安全管理",
-    "网发经理", "Network Development",
-    "城市运营",
+    "网发经理", "网发-", "IDC数字化交付",
     "实验室安全", "EHS管理",
-    "制造储备",
-    "体验管理专家", "区域体验管理",
     "标准法规专家-国内",
-    "汽车法规工程师-海外", "汽车法规专家-海外",
-    "质量管理工程师（非软件",
-    "质量促进", "质量班组长", "质量技师",
-    "服务工程工程师", "服务技术主管",
-    "备件业务运营", "配件订单",
-    "门店服务中心",
-    "运营商经理", "运营商政企经理",
-    "服务产品及市场",
-    "产品营销经理",
-    "车型外饰方向", "整车方向（非软件",
-    "性能方向（非软件",
-    "交付服务", "交付运营管理", "交付区域管理",
-    "人力资源", "人才招募",
+    "汽车法规", "智驾法规",
+    "质量班组长", "质量技师",
+    "保鲜净化",
+    "国际交付物流", "GTM高级专员",
+    "海外商业化运营经理",
+    "暖通技术", "数据中心建筑", "数据中心经理",
+    "供应链与合研安全经理",
+    "意健险理赔",
+    "运营商经理", "运营商政企",
+    "服务产品及市场", "车型外饰方向",
+    "战略合作",
+    "管理培训", "培训生",
+    "RMPV-", "整车项目质量", "质量经理",
+    "冰箱压缩机", "高级结构专家（非",
+    "测试工程师-热管理",
+    "招聘经理（forAI", "AI前沿材料",
+    "手机部-可靠性", "手机部-基带", "手机部-天线",
+    "手机部-结构", "手机部-硬件工艺",
+    "手机部-SIPI", "手机COE",
+    "可穿戴整机", "机器人结构", "机器人机械",
+    "电机控制器硬件", "产品数据管理-CAD",
+    "整车功能测试", "电气性能", "整车能量管理",
+    "异响试验", "加热器开发",
+    "硬件工程师-电池", "区域经理",
+    "悬架", 
 ]
 
 
-def load_json(path: Path) -> List[Dict]:
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    if isinstance(data, list):
-        return data
-    return data.get("items", data.get("data", []))
+def load_json(path): return json.load(open(path, "r", encoding="utf-8"))
+def save_json(path, data): json.dump(data if isinstance(data, list) else data.get("items", data.get("data", [])), open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
+def full_text(job):
+    return " ".join(str(job.get(k, "")) for k in ("title", "name", "description", "job_require", "requirement", "requirements"))
 
-def save_json(path: Path, data: List[Dict]) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-        f.write("\n")
-
-
-def job_text(job: Dict) -> str:
-    """Combine all text fields for keyword matching."""
+def is_cs(job, source):
     title = str(job.get("title", job.get("name", "")))
-    parts = [
-        title,
-        str(job.get("description", "")),
-        str(job.get("job_require", "")),
-        str(job.get("requirement", job.get("requirements", ""))),
-    ]
-    return " ".join(parts)
+    text = full_text(job)
+    tl = text.lower()
 
+    if source == "xiaomi":
+        for pat in XIAOMI_HARD_EXCLUDE:
+            if pat in title:
+                return False, f"hard-exclude: '{pat}'"
 
-def is_computer_related(job: Dict) -> Tuple[bool, str]:
-    """
-    Determine if a job is computer-science related.
-    Strategy (in order of priority):
-    1. Title-level include overrides (strongest: "软件工程师", "架构师", etc.)
-    2. Full-text include overrides (found programming/tech keywords anywhere)
-    3. Title exclusion keywords (specific non-tech role indicators)
-    4. Fuzzy fallback check for non-tech context
-    Returns (is_related, reason_string).
-    """
-    text = job_text(job)
-    title = str(job.get("title", job.get("name", "")))
-    title_lower = title.lower()
+    for sig in SOFTWARE_SIGNALS:
+        if sig.lower() in tl:
+            return True, f"include: signal '{sig}'"
 
-    # --- Step 1: Title-level include overrides (strongest signal) ---
-    for kw in OVERRIDE_TITLE_INCLUDE:
-        if kw in title:
-            return True, f"include: title contains '{kw}'"
+    for pat in TITLE_CS_PATTERNS:
+        if pat in title:
+            return True, f"include: title-cs '{pat}'"
 
-    # --- Step 2: Full-text include overrides ---
-    text_lower = text.lower()
-    for kw in OVERRIDE_INCLUDE_KEYWORDS:
-        if kw.lower() in text_lower:
-            return True, f"include: found keyword '{kw}'"
+    for pat in EXCLUDE_TITLE_PATTERNS:
+        if pat in title:
+            return False, f"exclude: '{pat}'"
 
-    # --- Step 3: Title exclusions (only if no include override matched) ---
-    for kw in EXCLUDE_TITLE_KEYWORDS:
-        if kw in title:
-            return False, f"exclude: title matches '{kw}'"
+    return True, "keep: default"
 
-    # --- Step 4: Fuzzy check for non-tech context ---
-    # If the title talks about non-software physical things and there's no
-    # programming/software keyword in the text, it's likely non-tech.
-    non_tech_title_patterns = [
-        "汽车", "发动机", "底盘", "制动", "悬架", "电池", "电芯",
-        "电机", "减速器", "热管理", "压缩机", "线束", "轮胎",
-        "钣金", "涂装", "焊装", "总装", "冲压", "压铸",
-        "零售", "门店", "销售", "售后",
-        "营销", "品牌", "渠道", "运营经理", "市场",
-        "招聘", "HR", "培训", "薪酬", "行政",
-        "财务", "法务", "审计", "合规",
-        "空调", "冰箱", "洗衣", "厨电",
-    ]
-    for pattern in non_tech_title_patterns:
-        if pattern in title_lower:
-            # Double-check: if the description mentions software engineering,
-            # it might still be tech. Otherwise, exclude.
-            software_signals = [
-                "代码", "编程", "软件", "系统架构", "协议栈", "SDN", "BGP", "OSPF", "网络协议栈",
-                "后端", "前端", "数据库", "算法", "AI", "模型",
-                "研发", "架构", "测试开发", "C++", "Java",
-                "Python", "Go", "Rust", "K8s", "Docker",
-            ]
-            if not any(s in text for s in software_signals):
-                return False, f"exclude: non-tech title '{pattern}' with no software signals"
-
-    # --- Step 5: Default to keeping ---
-    return True, "keep: default (no exclusion matched)"
-
-
-def audit_file(source: str, filename: str) -> Dict:
-    """Audit a raw data file and report what would be removed."""
-    filepath = DATA_DIR / filename
-    if not filepath.exists():
-        print(f"  [SKIP] {filename} not found")
-        return {"source": source, "total": 0, "keep": 0, "remove": 0, "removed": []}
-
-    jobs = load_json(filepath)
-    keep = []
-    remove = []
-
-    for job in jobs:
-        related, reason = is_computer_related(job)
-        if related:
-            keep.append(job)
-        else:
-            remove.append((job, reason))
-
-    return {
-        "source": source,
-        "file": filename,
-        "total": len(jobs),
-        "keep": len(keep),
-        "remove": len(remove),
-        "removed": remove,
-        "keep_data": keep,
-    }
-
+def audit(source, fname):
+    path = DATA_DIR / fname
+    if not path.exists(): return {"source": source, "file": fname, "total": 0, "keep": 0, "remove": 0}
+    jobs = load_json(path)
+    if not isinstance(jobs, list): jobs = jobs.get("items", jobs.get("data", []))
+    keep, rem = [], []
+    for j in jobs:
+        ok, why = is_cs(j, source)
+        (keep if ok else rem).append((j, why))
+    return {"source": source, "file": fname, "total": len(jobs), "keep": len(keep), "remove": len(rem), "removed": rem, "keep_data": [j for j,_ in keep]}
 
 def main():
-    dry_run = "--execute" not in sys.argv
-    mode = "DRY RUN" if dry_run else "EXECUTE"
-    print(f"=== JobCloud Auto-Clean {mode} ===\n")
+    dry = "--execute" not in sys.argv
+    print(f"=== JobCloud Auto-Clean {'DRY RUN' if dry else 'EXECUTE'} ===\n")
 
-    results = {}
-    total_total = 0
-    total_keep = 0
-    total_remove = 0
+    results, tt, tk, tr = {}, 0, 0, 0
+    for src, fn in RAW_FILES.items():
+        print(f"\n--- {src} ({fn}) ---")
+        r = audit(src, fn)
+        results[src] = r
+        tt += r["total"]; tk += r["keep"]; tr += r["remove"]
+        print(f"  Total: {r['total']}, Keep: {r['keep']}, Remove: {r['remove']}")
+        if 0 < r["remove"] <= 25:
+            for j, why in r["removed"]:
+                print(f"    - [{why}] {j.get('title', j.get('name', '?'))}")
+        elif r["remove"] > 25:
+            for j, why in r["removed"][:8]:
+                print(f"    - [{why}] {j.get('title', j.get('name', '?'))}")
+            print(f"    ... and {r['remove'] - 8} more")
 
-    for source, filename in RAW_FILES.items():
-        print(f"Auditing {source} ({filename})...")
-        result = audit_file(source, filename)
-        results[source] = result
+    print(f"\n{'='*60}")
+    print(f"  Total: {tt} | Keep: {tk} ({100*tk/max(tt,1):.1f}%) | Remove: {tr}")
+    print(f"{'='*60}")
 
-        total_total += result["total"]
-        total_keep += result["keep"]
-        total_remove += result["remove"]
-
-        print(f"  Total: {result['total']}, Keep: {result['keep']}, Remove: {result['remove']}")
-
-        if result["remove"] > 0 and result["remove"] <= 30:
-            for job, reason in result["removed"]:
-                title = job.get("title", job.get("name", "N/A"))
-                print(f"    - [{reason}] {title}")
-        elif result["remove"] > 30:
-            # Sample first 10
-            for job, reason in result["removed"][:10]:
-                title = job.get("title", job.get("name", "N/A"))
-                print(f"    - [{reason}] {title}")
-            print(f"    ... and {result['remove'] - 10} more")
-        print()
-
-    print(f"=== Summary ===")
-    print(f"Total jobs: {total_total}")
-    print(f"Kept:       {total_keep} ({100*total_keep/max(total_total,1):.1f}%)")
-    print(f"Removed:    {total_remove} ({100*total_remove/max(total_total,1):.1f}%)")
-    print(f"Files: {len(RAW_FILES)}")
-
-    if dry_run:
-        print(f"\nThis was a DRY RUN. To execute for real, run:")
-        print(f"  python scripts/auto_clean_jobs.py --execute")
+    if dry:
+        print("\nRun: python scripts/auto_clean_jobs.py --execute")
         return
 
-    # === EXECUTE MODE ===
-    print("\n=== Executing: backing up and filtering raw data ===\n")
+    print("\n=== Executing ===\n")
+    bu = DATA_DIR / "backup_before_clean"
+    bu.mkdir(exist_ok=True)
+    for src, r in results.items():
+        if not r.get("file") or r["total"] == 0: continue
+        fp = DATA_DIR / r["file"]
+        shutil.copy2(fp, bu / r["file"])
+        print(f"  Backed up: {r['file']}")
+        save_json(fp, r["keep_data"])
+        print(f"  Filtered:  {r['file']} ({r['total']} -> {r['keep']})")
 
-    backup_dir = DATA_DIR / "backup_before_clean"
-    backup_dir.mkdir(exist_ok=True)
-
-    import shutil
-
-    for source, result in results.items():
-        if result["total"] == 0:
-            continue
-
-        filepath = DATA_DIR / result["file"]
-
-        # Backup original
-        shutil.copy2(filepath, backup_dir / result["file"])
-        print(f"  Backed up: {result['file']} -> backup_before_clean/")
-
-        # Overwrite with filtered data
-        save_json(filepath, result["keep_data"])
-        print(f"  Filtered:  {result['file']} ({result['total']} -> {result['keep']})")
-
-    # === Rebuild processed data ===
     print("\n=== Rebuilding processed data ===\n")
-    result = subprocess.run(
-        ["node", "scripts/build_compact_data.mjs"],
-        cwd=str(ROOT),
-        capture_output=True,
-        text=True,
-    )
-    print(result.stdout)
-    if result.returncode != 0:
-        print(f"ERROR: {result.stderr}")
+    r2 = subprocess.run(["node", str(ROOT / "scripts" / "build_compact_data.mjs")], cwd=str(ROOT), capture_output=True, text=True)
+    print(r2.stdout)
+    if r2.returncode:
+        print(f"ERROR: {r2.stderr}")
         sys.exit(1)
+    print("=== Done! ===")
 
-    print("\n=== Done! ===")
-    print(f"Raw data filtered, processed data rebuilt, backup saved at data/backup_before_clean/")
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()

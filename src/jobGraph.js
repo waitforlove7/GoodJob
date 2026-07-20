@@ -104,7 +104,6 @@ export const CATEGORY_RULES = [
     body: ["产品设计", "项目管理", "需求分析", "客户", "解决方案"],
   },
 ];
-
 export const OTHER_CATEGORY = {
   id: "other",
   label: "其他",

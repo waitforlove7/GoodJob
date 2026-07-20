@@ -5,15 +5,15 @@ import { useI18n } from "./i18n.jsx";
 const VIEWBOX = { width: 1000, height: 1100 };
 const CATEGORY_HIGHLIGHT_THRESHOLD = 2;
 const CLUSTER_CENTERS = {
-  "web-client": { x: 190, y: 430 },
-  backend: { x: 500, y: 430 },
-  data: { x: 810, y: 430 },
-  quality: { x: 190, y: 690 },
-  languages: { x: 500, y: 690 },
-  systems: { x: 810, y: 690 },
-  "ai-agent": { x: 190, y: 950 },
-  "ai-model": { x: 500, y: 950 },
-  cloud: { x: 810, y: 950 },
+  "web-client": { x: 210, y: 450 },
+  backend: { x: 490, y: 450 },
+  data: { x: 770, y: 450 },
+  quality: { x: 210, y: 660 },
+  languages: { x: 490, y: 660 },
+  systems: { x: 770, y: 660 },
+  "ai-agent": { x: 210, y: 870 },
+  "ai-model": { x: 490, y: 870 },
+  cloud: { x: 770, y: 870 },
 };
 
 export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
@@ -268,14 +268,17 @@ function buildInitialLayout(model) {
     };
   });
 
-  const spacing = 52;
+  const spacing = 58;
 
   // Position skills that belong to exactly one group (pure cluster skills)
   model.skillGroups.forEach((group) => {
     const center = CLUSTER_CENTERS[group.id];
     if (!center) return;
     const skills = group.skills
-      .filter((skill) => (model.skillMemberships.get(skill.id)?.length || 0) === 1)
+      .filter((skill) => {
+        const m = model.skillMemberships.get(skill.id) || [];
+        return m.length === 1 || (group.id === "languages" && m.includes("languages"));
+      })
       .sort((a, b) => hashString(a.id) - hashString(b.id));
     const columns = Math.max(1, Math.ceil(Math.sqrt(skills.length)));
     const rows = Math.max(1, Math.ceil(skills.length / columns));
@@ -286,8 +289,8 @@ function buildInitialLayout(model) {
       const rowLength = Math.min(columns, skills.length - row * columns);
       const random = seededRandom(hashString(`${skill.id}:position`));
       positions[skill.id] = {
-        x: center.x + (column - (rowLength - 1) / 2) * spacing + (random() - 0.5) * 8,
-        y: center.y + (row - (rows - 1) / 2) * spacing + (random() - 0.5) * 8,
+        x: center.x + (column - (rowLength - 1) / 2) * spacing + (random() - 0.5) * 6,
+        y: center.y + (row - (rows - 1) / 2) * spacing + (random() - 0.5) * 6,
       };
     });
   });
@@ -295,6 +298,7 @@ function buildInitialLayout(model) {
   // Position skills shared across multiple groups (boundary skills)
   const sharedSkillsByBoundary = new Map();
   for (const skill of model.skills) {
+    if (positions[skill.id]) continue;
     const memberships = model.skillMemberships.get(skill.id) || [];
     if (memberships.length < 2) continue;
     const boundaryId = [...memberships].sort().join(":");
@@ -337,7 +341,7 @@ function buildInitialLayout(model) {
     }
 
     skills.sort((a, b) => hashString(a.id) - hashString(b.id)).forEach((skill, index) => {
-      const offset = (index - (skills.length - 1) / 2) * 48;
+      const offset = (index - (skills.length - 1) / 2) * 42;
       positions[skill.id] = {
         x: center.x - (dy / length) * offset,
         y: center.y + (dx / length) * offset,
@@ -350,8 +354,8 @@ function buildInitialLayout(model) {
   for (const skill of model.skills) {
     if (!positions[skill.id]) {
       positions[skill.id] = {
-        x: FALLBACK_CENTER.x + (defaultOffset % 10) * 52,
-        y: FALLBACK_CENTER.y + Math.floor(defaultOffset / 10) * 52,
+        x: FALLBACK_CENTER.x + (defaultOffset % 10) * spacing,
+        y: FALLBACK_CENTER.y + Math.floor(defaultOffset / 10) * spacing,
       };
       defaultOffset += 1;
     }

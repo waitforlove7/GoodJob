@@ -3,9 +3,9 @@ const PROGRAMMING_LANGUAGE_LABELS = new Set(["Python", "C/C++", "Go", "Java", "J
 const SKILL_GROUPS = [
   { id: "languages", label: "基础语言", color: "#5b8cff", skills: ["Python", "C/C++", "Go", "Java", "JS/TS", "Rust"] },
   { id: "web-client", label: "Web 与客户端", color: "#32d6c7", skills: ["Android", "iOS", "Flutter", "Swift", "React", "Vue", "Svelte", "Webpack/Vite", "HTML/CSS", "JS/TS"] },
-  { id: "backend", label: "后端架构", color: "#8b7cff", skills: ["分布式系统", "微服务", "RPC", "JS/TS", "Go", "Java", "MySQL", "Redis", "Kafka"] },
+  { id: "backend", label: "后端架构", color: "#8b7cff", skills: ["分布式系统", "微服务", "RPC", "JS/TS", "Go", "Java", "Spring", "MyBatis", "MySQL", "Redis", "Kafka"] },
   { id: "data", label: "数据工程", color: "#4dc9ff", skills: ["MySQL", "Redis", "NoSQL", "RocksDB", "Pika", "Ceph", "Kafka", "Spark", "Flink", "Hadoop", "Hive", "ClickHouse", "Doris", "HBase", "SQL", "数据仓库", "数据湖"] },
-  { id: "cloud", label: "云原生环境", color: "#6ee7a8", skills: ["Kubernetes", "Docker", "监控告警", "Linux"] },
+  { id: "cloud", label: "云原生环境", color: "#6ee7a8", skills: ["Kubernetes", "Docker", "监控告警"] },
   { id: "ai-model", label: "AI 模型与算法", color: "#cf67ff", skills: ["TensorFlow", "PyTorch", "Transformer", "NLP", "CV", "LLM", "Fine-Tuning", "SFT", "RL", "RLHF", "机器学习", "深度学习", "推荐系统", "Python"] },
   { id: "ai-agent", label: "AI Agent 应用", color: "#ff66c4", skills: ["AIGC", "Multi Agent", "Agent Infra", "Tool Use", "Prompt Engineering", "LangGraph", "CrewAI", "OpenClaw", "Agent", "RAG", "ReAct", "LLM"] },
   { id: "systems", label: "系统、网络与硬件", color: "#ffad5c", skills: ["Linux", "RTOS", "Sensor", "驱动开发", "PCIe", "RDMA", "TCP/IP", "BGP", "VXLAN", "IDA", "WinDBG", "XPERF", "NVML", "NVIDIA-SMI", "CUDA-GDB", "C/C++", "Rust"] },
@@ -27,17 +27,21 @@ export function buildSkillDagModel(graph) {
       categoryId: category.id,
     }));
   });
+  const relevantSkillIds = new Set(edges.map((edge) => edge.skillId));
+  const skills = graph.skills.filter((skill) => relevantSkillIds.has(skill.id));
   const skillByLabel = new Map(graph.skills.map((skill) => [skill.label, skill]));
   const skillGroups = SKILL_GROUPS.map(({ skills, ...group }) => ({
     ...group,
-    skills: skills.map((label) => skillByLabel.get(label)).filter(Boolean),
+    skills: skills
+      .map((label) => skillByLabel.get(label))
+      .filter((skill) => skill && relevantSkillIds.has(skill.id)),
   }));
   const skillMemberships = new Map(graph.skills.map((skill) => [
     skill.id,
     skillGroups.filter((group) => group.skills.some((item) => item.id === skill.id)).map((group) => group.id),
   ]));
 
-  return { categories, skills: graph.skills, skillGroups, skillMemberships, edges };
+  return { categories, skills, skillGroups, skillMemberships, edges };
 }
 
 export function evaluateSkillDag(model, selectedSkillIds) {

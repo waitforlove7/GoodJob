@@ -111,12 +111,6 @@
     ]
   ],
   [
-    "Svelte",
-    [
-      "Svelte"
-    ]
-  ],
-  [
     "Webpack/Vite",
     [
       "Webpack",
@@ -185,13 +179,6 @@
     ]
   ],
   [
-    "VXLAN",
-    [
-      "VXLAN",
-      "VxLAN"
-    ]
-  ],
-  [
     "MySQL",
     [
       "MySQL",
@@ -219,19 +206,6 @@
     [
       "RocksDB",
       "Rocks DB"
-    ]
-  ],
-  [
-    "Pika",
-    [
-      "Pika",
-      "pika"
-    ]
-  ],
-  [
-    "Ceph",
-    [
-      "Ceph"
     ]
   ],
   [
@@ -532,12 +506,6 @@
     ]
   ],
   [
-    "Maven",
-    [
-      "Maven"
-    ]
-  ],
-  [
     "Spring",
     [
       "Spring",
@@ -552,21 +520,9 @@
     ]
   ],
   [
-    "JUnit",
-    [
-      "JUnit"
-    ]
-  ],
-  [
     "Excel",
     [
       "Excel"
-    ]
-  ],
-  [
-    "AJAX",
-    [
-      "AJAX"
     ]
   ],
   [
@@ -577,41 +533,172 @@
     ]
   ],
   [
-    "WinDBG",
+    "Unity",
     [
-      "WinDBG",
-      "WinDbg"
+      "Unity"
     ]
   ],
   [
-    "XPERF",
+    "Unreal",
     [
-      "XPERF",
-      "xperf"
+      "Unreal",
+      "UE4",
+      "UE5"
     ]
   ],
   [
-    "NVML",
+    "射频",
     [
-      "NVML",
-      "Nvml",
-      "nvml"
+      "射频",
+      "RF"
     ]
   ],
   [
-    "NVIDIA-SMI",
+    "基带",
     [
-      "NVIDIA-SMI",
-      "NVIDIA-smi",
-      "nvidia-smi"
+      "基带",
+      "Baseband"
     ]
   ],
   [
-    "CUDA-GDB",
+    "WiFi/蓝牙",
     [
-      "CUDA-GDB",
-      "CUDA-gdb",
-      "cuda-gdb"
+      "WiFi",
+      "蓝牙",
+      "BLE"
+    ]
+  ],
+  [
+    "GNSS",
+    [
+      "GNSS",
+      "GPS",
+      "北斗"
+    ]
+  ],
+  [
+    "5G/4G",
+    [
+      "5G",
+      "4G",
+      "LTE",
+      "蜂窝"
+    ]
+  ],
+  [
+    "光通信",
+    [
+      "光通信",
+      "光模块",
+      "SerDes"
+    ]
+  ],
+  [
+    "PCB",
+    [
+      "PCB",
+      "PCB Layout",
+      "高速PCB"
+    ]
+  ],
+  [
+    "DDR",
+    [
+      "DDR",
+      "DDRC",
+      "DDRPHY"
+    ]
+  ],
+  [
+    "IC验证",
+    [
+      "IC验证",
+      "芯片验证",
+      "EVB"
+    ]
+  ],
+  [
+    "数据中心",
+    [
+      "数据中心",
+      "IDC技术",
+      "IDC运营"
+    ]
+  ],
+  [
+    "服务器硬件",
+    [
+      "服务器硬件",
+      "服务器整机",
+      "服务器固件"
+    ]
+  ],
+  [
+    "交换机",
+    [
+      "交换机"
+    ]
+  ],
+  [
+    "Camera/相机",
+    [
+      "Camera",
+      "相机"
+    ]
+  ],
+  [
+    "ISP",
+    [
+      "ISP",
+      "图像调校",
+      "影像评测"
+    ]
+  ],
+  [
+    "功能安全",
+    [
+      "功能安全",
+      "预期功能安全",
+      "ISO26262"
+    ]
+  ],
+  [
+    "OTA",
+    [
+      "OTA",
+      "OTA车端"
+    ]
+  ],
+  [
+    "CAN/LIN",
+    [
+      "CAN",
+      "LIN总线",
+      "CANFD"
+    ]
+  ],
+  [
+    "质量管理",
+    [
+      "PQM",
+      "RDQA",
+      "SQA",
+      "TQM",
+      "产品质量"
+    ]
+  ],
+  [
+    "LLVM/编译器",
+    [
+      "LLVM",
+      "编译器"
+    ]
+  ],
+  [
+    "DFX",
+    [
+      "DFx",
+      "DFX"
     ]
   ]
 ]
