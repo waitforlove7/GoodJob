@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildSkillDagModel, evaluateSkillDag, suggestedSkillRowsForCategory } from "./skillDag.js";
-import { useI18n } from "./i18n.jsx";
 
 const VIEWBOX = { width: 1000, height: 1100 };
 const CATEGORY_HIGHLIGHT_THRESHOLD = 2;
@@ -17,7 +16,6 @@ const CLUSTER_CENTERS = {
 };
 
 export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
-  const { t } = useI18n();
   const model = useMemo(() => buildSkillDagModel(graph), [graph]);
   const initialLayout = useMemo(() => buildInitialLayout(model), [model]);
   const motionBySkillId = useMemo(
@@ -86,23 +84,23 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
   return (
     <div className="skill-dag-shell">
       <div className="skill-dag-heading">
-        <span>{t("技能加点 DAG")}</span>
-        <strong>{selected.size > 0 ? t("已选择 {count} 项技能", { count: selected.size }) : t("点击技能圆点开始规划")}</strong>
-        <small>{t("拖动圆点可调整布局")}</small>
+        <span>技能加点 DAG</span>
+        <strong>{selected.size > 0 ? `已选择 ${selected.size} 项技能` : "点击技能圆点开始规划"}</strong>
+        <small>拖动圆点可调整布局</small>
       </div>
       <svg
         ref={svgRef}
         className="skill-dag-map"
         viewBox={`0 0 ${VIEWBOX.width} ${VIEWBOX.height}`}
         role="group"
-        aria-label={t("技能到岗位大类的可拖动有向无环图")}
+        aria-label="技能到岗位大类的可拖动有向无环图"
       >
         <defs>
           <marker id="skill-dag-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" />
           </marker>
         </defs>
-        <text className="skill-dag-layer-label" x="36" y="32">{t("岗位大类 · DAG 终点")}</text>
+        <text className="skill-dag-layer-label" x="36" y="32">岗位大类 · DAG 终点</text>
 
         <g className="skill-dag-edges" aria-hidden="true">
           {model.edges.map((edge) => {
@@ -132,7 +130,7 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
               key={category.id}
               className={`skill-dag-category${highlighted ? " is-matched" : ""}${recommended ? " is-recommended" : ""}${match?.unlocked ? " is-unlocked" : ""}`}
               transform={`translate(${position.x} ${position.y})`}
-              aria-label={`${t(category.label)}, ${t("匹配 {matched}/{total}", { matched: match?.matchedCount || 0, total: match?.total || 3 })}`}
+              aria-label={`${category.label}，匹配 ${match?.matchedCount || 0}/${match?.total || 3}`}
               onPointerDown={(event) => startDrag(event, category.id)}
               onPointerMove={moveDrag}
               onPointerUp={(event) => finishDrag(event)}
@@ -141,9 +139,9 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
               <g className="skill-dag-category-visual">
                 <circle className="skill-dag-category-halo" r="42" />
                 <circle className="skill-dag-category-core" r="40" style={{ "--category-color": category.color }} />
-                <text className="skill-dag-category-label" textAnchor="middle" y="-3">{t(category.label)}</text>
+                <text className="skill-dag-category-label" textAnchor="middle" y="-3">{category.label}</text>
                 <text className="skill-dag-category-score" textAnchor="middle" y="16">
-                  {match?.unlocked ? t("已点亮") : `${match?.matchedCount || 0}/${match?.total || 3}`}
+                  {match?.unlocked ? "已点亮" : `${match?.matchedCount || 0}/${match?.total || 3}`}
                 </text>
               </g>
             </g>
@@ -153,7 +151,7 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
         {model.skills.map((skill) => {
           const position = positions[skill.id];
           const active = selected.has(skill.id);
-          const labelLines = skillLabelLines(t(skill.label));
+          const labelLines = skillLabelLines(skill.label);
           const motion = motionBySkillId.get(skill.id);
           return (
             <g
@@ -163,7 +161,7 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
               role="button"
               tabIndex="0"
               aria-pressed={active}
-              aria-label={`${t(skill.label)}, ${active ? t("已选择") : t("未选择")}`}
+              aria-label={`${skill.label}，${active ? "已选择" : "未选择"}`}
               onPointerDown={(event) => startDrag(event, skill.id)}
               onPointerMove={moveDrag}
               onPointerUp={(event) => finishDrag(event, skill.id)}
@@ -206,7 +204,6 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
 }
 
 export function SkillDagPanel({ graph, selectedSkillIds, onToggleSkill }) {
-  const { t } = useI18n();
   const model = useMemo(() => buildSkillDagModel(graph), [graph]);
   const matches = useMemo(() => evaluateSkillDag(model, selectedSkillIds), [model, selectedSkillIds]);
   const selectedSkills = selectedSkillIds.map((skillId) => graph.nodeById.get(skillId)).filter(Boolean);
@@ -215,28 +212,28 @@ export function SkillDagPanel({ graph, selectedSkillIds, onToggleSkill }) {
   return (
     <aside className="info-panel skill-dag-panel">
       <div className="panel-section">
-        <p className="panel-kicker">{t("技能加点")}</p>
-        <h2>{selectedSkills.length > 0 ? t("{count} 项技能已选择", { count: selectedSkills.length }) : t("规划职业方向")}</h2>
-        <p className="muted">{t("点击技能进行多选；系统按每个大类的高频三技能组合计算最接近的方向。")}</p>
+        <p className="panel-kicker">技能加点</p>
+        <h2>{selectedSkills.length > 0 ? `${selectedSkills.length} 项技能已选择` : "规划职业方向"}</h2>
+        <p className="muted">点击技能进行多选；系统按每个大类的高频三技能组合计算最接近的方向。</p>
       </div>
 
       <div className="panel-section">
-        <h3>{t("当前技能")}</h3>
+        <h3>当前技能</h3>
         {selectedSkills.length > 0 ? (
           <div className="skill-dag-selected-list">
             {selectedSkills.map((skill) => (
               <button key={skill.id} type="button" onClick={() => onToggleSkill(skill.id)}>
-                {t(skill.label)}<span>×</span>
+                {skill.label}<span>×</span>
               </button>
             ))}
           </div>
         ) : (
-          <p className="muted">{t("尚未选择技能。可以从任意技能开始，不限制前置顺序。")}</p>
+          <p className="muted">尚未选择技能。可以从任意技能开始，不限制前置顺序。</p>
         )}
       </div>
 
       <div className="panel-section">
-        <h3>{t("推荐方向")}</h3>
+        <h3>推荐方向</h3>
         {recommendations.length > 0 ? (
           <div className="skill-dag-recommendations">
             {recommendations.map((match, index) => {
@@ -246,21 +243,21 @@ export function SkillDagPanel({ graph, selectedSkillIds, onToggleSkill }) {
               return (
                 <div key={match.category.id} className={index === 0 ? "is-best" : ""}>
                   <span style={{ "--category-color": match.category.color }}>{index + 1}</span>
-                  <strong>{t(match.category.label)}</strong>
+                  <strong>{match.category.label}</strong>
                   <em>{match.matchedCount}/{match.total}</em>
                   <small>
                     {match.unlocked
-                      ? t("高频组合已点亮")
-                      : t("建议补充：{skills}", { skills: match.best.missingSkills.map((skill) => t(skill.label)).join(" / ") })}
+                      ? "高频组合已点亮"
+                      : `建议补充：${match.best.missingSkills.map((skill) => skill.label).join("、")}`}
                   </small>
                   {suggestedSkills.length > 0 ? (
                     <div className="skill-dag-suggestions">
-                      <b>{t("建议补充的其他技能")}</b>
+                      <b>建议补充的其他技能</b>
                       <ol>
                         {suggestedSkills.map((skill, skillIndex) => (
                           <li key={skill.id} className={skill.isLanguageGroup ? "is-language-group" : ""}>
                             <span>{skillIndex + 1}</span>
-                            <strong>{t(skill.label)}</strong>
+                            <strong>{skill.label}</strong>
                             <em>{skill.countLabel}</em>
                           </li>
                         ))}
@@ -272,7 +269,7 @@ export function SkillDagPanel({ graph, selectedSkillIds, onToggleSkill }) {
             })}
           </div>
         ) : (
-          <p className="muted">{t("选择技能后，这里只展示匹配度最高的三个大类。")}</p>
+          <p className="muted">选择技能后，这里只展示匹配度最高的三个大类。</p>
         )}
       </div>
     </aside>

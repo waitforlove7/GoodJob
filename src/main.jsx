@@ -1,83 +1,27 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Analytics, track } from "@vercel/analytics/react";
-import { Activity, BriefcaseBusiness, Building2, Layers3, Search, Sparkles } from "lucide-react";
+import { track } from "@vercel/analytics/react";
+import { Root } from "./Root.jsx";
+import { Activity, ArrowDownRight, BriefcaseBusiness, Layers3, Search, Sparkles } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Sector, Tooltip } from "recharts";
-import { buildJobGraph, jobsMatchingAllSkills, searchJobs, sortRelatedJobs } from "./jobGraph.js";
+import jobsPayload from "../bytedance_jobs.json";
+import { buildJobGraph, jobsMatchingAllSkills, sortRelatedJobs } from "./jobGraph.js";
 import { JobGalaxy } from "./JobGalaxy.jsx";
 import { SkillDag, SkillDagPanel } from "./SkillDag.jsx";
 import "./styles.css";
-import { I18nProvider, useI18n } from "./i18n.jsx";
-import {
-  COMPANY_CONFIGS,
-  COMPANY_KEYS,
-  buildMergedOverrides,
-  loadCompanyData,
-  loadMergedData,
-  loadRoleDetails,
-} from "./adapters/index.js";
 
-function App({ language, onLanguageChange }) {
-  const { t } = useI18n();
-  const [companyKey, setCompanyKey] = useState("all");
-  const [graph, setGraph] = useState(null);
-  const [loading, setLoading] = useState(true);
+function App() {
+  const graph = useMemo(() => buildJobGraph(jobsPayload), []);
   const [layerView, setLayerView] = useState("category");
   const [skillViewMode, setSkillViewMode] = useState("frequency");
   const [skillCategoryFilterId, setSkillCategoryFilterId] = useState(null);
   const [selectedSkillIds, setSelectedSkillIds] = useState([]);
   const [masteredSkillIds, setMasteredSkillIds] = useState([]);
   const [relatedJobId, setRelatedJobId] = useState(null);
-  const [selected, setSelected] = useState(null);
-
-  const handleCompanyChange = useCallback((nextCompanyKey) => {
-    setCompanyKey(nextCompanyKey);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setSelected(null);
-    setSelectedSkillIds([]);
-    setMasteredSkillIds([]);
-    setRelatedJobId(null);
-    setSkillCategoryFilterId(null);
-    setSkillViewMode("frequency");
-    setLayerView("category");
-    (async () => {
-      try {
-        let payload, overrides;
-        if (companyKey === "all") {
-          payload = await loadMergedData(COMPANY_KEYS);
-          overrides = buildMergedOverrides(COMPANY_KEYS);
-        } else {
-          payload = await loadCompanyData(companyKey);
-          overrides = buildMergedOverrides([companyKey]);
-        }
-        const g = buildJobGraph(payload, { source: payload.source, categoryOverrides: overrides });
-        if (!cancelled) {
-          setGraph(g);
-          setSelected(null);
-        }
-      } catch (err) {
-        console.error("[JobCloud] Failed to load company data:", err);
-        if (!cancelled) {
-          setGraph({
-            categories: [], jobs: [], skills: [], nodes: [], links: [],
-            nodeById: new Map(), jobsByCategory: new Map(), jobsBySkill: new Map(),
-            jobsBySkillAndCategory: new Map(), globalSkillRanking: [],
-            skillRankingByCategory: new Map(), skillTripleRankingByCategory: new Map(),
-            globalSkillVisuals: new Map(), skillVisualsByCategory: new Map(),
-            stats: { totalJobs: 0, completeJobs: 0, completeRate: 0 },
-          });
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [companyKey]);
-
+  const [selected, setSelected] = useState(() => {
+    const backend = graph.categories.find((category) => category.key === "backend");
+    return backend ? { id: backend.id, type: backend.type } : null;
+  });
   const handleSelect = useCallback((nextSelection) => {
     setRelatedJobId(null);
     setSkillCategoryFilterId(null);
@@ -86,7 +30,7 @@ function App({ language, onLanguageChange }) {
       setSelectedSkillIds([]);
       return;
     }
-    const node = graph?.nodeById?.get(nextSelection.id);
+    const node = graph.nodeById.get(nextSelection.id);
     track("graph_node_selected", {
       node_type: nextSelection.type,
       node_label: node?.label || nextSelection.id,
@@ -119,13 +63,13 @@ function App({ language, onLanguageChange }) {
     }
   }, [handleSelect, selected, selectedSkillIds]);
 
-  const selectedNode = selected ? graph?.nodeById?.get(selected.id) : null;
+  const selectedNode = selected ? graph.nodeById.get(selected.id) : null;
   const galaxySelection = relatedJobId ? { id: relatedJobId, type: "job" } : selected;
   const selectedCategory =
     selectedNode?.type === "category"
       ? selectedNode
       : selectedNode?.type === "job"
-        ? graph?.nodeById?.get(selectedNode.categoryId)
+        ? graph.nodeById.get(selectedNode.categoryId)
         : null;
   const handleLayerViewChange = useCallback((nextView) => {
     if (nextView === layerView) {
@@ -150,101 +94,70 @@ function App({ language, onLanguageChange }) {
     setSkillViewMode(nextMode);
   }, []);
 
-  if (!graph) {
-    return (
-      <main className="app-shell">
-        <header className="site-header">
-          <a className="brand" href="#top" aria-label={`GoodJob ${t("首页")}`}>
-            <span className="brand-mark"><Sparkles size={16} /></span>
-            <strong>GoodJob</strong>
-            <small>Web Mining Group1</small>
-          </a>
-          <JobSearch disabled />
-          <LanguageToggle language={language} onChange={onLanguageChange} />
-        </header>
-        <section className="workspace" id="explore">
-          <div className="visualization-column">
-            <CompanyToolbar
-              companyKey={companyKey}
-              onChange={handleCompanyChange}
-              disabled
-            />
-            <div className="scene-wrap">
-              <div className="loading-spinner" />
-            </div>
-          </div>
-          <aside className="info-panel">
-            <div className="panel-section">
-              <p className="panel-kicker">{t("加载数据")}</p>
-              <h2>{t("正在加载岗位数据...")}</h2>
-              <p className="muted">{t("请稍候，正在获取公司招聘信息。")}</p>
-            </div>
-          </aside>
-        </section>
-      </main>
-    );
-  }
-
   return (
     <main className="app-shell">
       <header className="site-header">
-        <a className="brand" href="#top" aria-label={`GoodJob ${t("首页")}`}>
+        <a className="brand" href="#top" aria-label="JobCloud 首页">
           <span className="brand-mark"><Sparkles size={16} /></span>
-          <strong>GoodJob</strong>
-          <small>Web Mining Group1</small>
+          <strong>JobCloud</strong>
+          <small>岗位技能情报站</small>
         </a>
-        <JobSearch graph={graph} onSelect={handleSelect} disabled={loading} />
-        <LanguageToggle language={language} onChange={onLanguageChange} />
+        <nav className="header-nav" aria-label="站点导航">
+          <a className="header-link" href="#profile">
+            学习星座
+          </a>
+          <a className="header-link" href="#explore">
+            探索图谱 <ArrowDownRight size={15} />
+          </a>
+        </nav>
       </header>
 
       <section className="hero-panel" id="top">
         <div className="title-block">
-          <h1>{t("看见岗位之间的")}<br /><em>{t("隐形连接")}</em></h1>
+          <span className="eyebrow"><span /> 真实岗位数据 · 动态技能图谱</span>
+          <h1>看见岗位之间的<br /><em>隐形连接</em></h1>
           <p>
-            {t("把分散的职位描述变成一张可探索的技能星图。快速比较岗位大类、技能热度与职业方向，找到下一步最值得投入的能力。")}
+            把分散的职位描述变成一张可探索的技能星图。快速比较岗位大类、技能热度与职业方向，找到下一步最值得投入的能力。
           </p>
+          <div className="hero-actions">
+            <a className="hero-cta" href="#explore" onClick={() => track("explore_started")}>
+              开始探索 <ArrowDownRight size={17} />
+            </a>
+            <a className="hero-cta hero-cta-outline" href="#profile">
+              进入学习星座
+            </a>
+          </div>
         </div>
-        <div className="metric-grid" aria-label={t("数据概览")}>
-          <Metric icon={<BriefcaseBusiness />} label={t("招聘发布")} value={graph.stats.totalJobs} />
-          <Metric icon={<Building2 />} label={t("岗位角色")} value={graph.stats.roleCount ?? graph.jobs.length} />
-          <Metric icon={<Layers3 />} label={t("大类")} value={graph.categories.length} />
-          <Metric icon={<Activity />} label={t("技能")} value={graph.skills.length} />
-          <Metric icon={<Search />} label={t("描述完整度")} value={`${graph.stats.completeRate}%`} />
+        <div className="metric-grid" aria-label="数据概览">
+          <Metric icon={<BriefcaseBusiness />} label="岗位" value={graph.stats.totalJobs} />
+          <Metric icon={<Layers3 />} label="大类" value={graph.categories.length} />
+          <Metric icon={<Activity />} label="技能" value={graph.skills.length} />
+          <Metric icon={<Search />} label="完整度" value={`${graph.stats.completeRate}%`} />
         </div>
       </section>
 
-      <section className={`workspace${loading ? " is-loading" : ""}`} id="explore" aria-busy={loading}>
-        <div className="visualization-column">
-          <CompanyToolbar companyKey={companyKey} onChange={handleCompanyChange} disabled={loading} />
-          <div className="scene-wrap">
-            <ViewToggle activeView={layerView} onChange={handleLayerViewChange} />
-            {layerView === "skill" && (
-              <SkillViewToggle activeView={skillViewMode} onChange={handleSkillViewModeChange} />
-            )}
-            {layerView === "skill" && skillViewMode === "dag" ? (
-              <SkillDag
-                graph={graph}
-                selectedSkillIds={masteredSkillIds}
-                onToggleSkill={handleToggleMasteredSkill}
-              />
-            ) : (
-              <JobGalaxy
-                graph={graph}
-                selected={galaxySelection}
-                selectedSkillIds={selectedSkillIds}
-                onSelect={handleSelect}
-                layerView={layerView}
-                skillCategoryFilterId={selectedNode?.type === "skill" ? skillCategoryFilterId : null}
-              />
-            )}
-            {loading ? (
-              <div className="scene-loading-overlay" role="status" aria-live="polite">
-                <div className="loading-spinner" />
-                <strong>{t("正在切换数据源...")}</strong>
-                <span>{t("当前布局保持不变，新图谱准备完成后将自动更新。")}</span>
-              </div>
-            ) : null}
-          </div>
+      <section className="workspace" id="explore">
+        <div className="scene-wrap">
+          <ViewToggle activeView={layerView} onChange={handleLayerViewChange} />
+          {layerView === "skill" && (
+            <SkillViewToggle activeView={skillViewMode} onChange={handleSkillViewModeChange} />
+          )}
+          {layerView === "skill" && skillViewMode === "dag" ? (
+            <SkillDag
+              graph={graph}
+              selectedSkillIds={masteredSkillIds}
+              onToggleSkill={handleToggleMasteredSkill}
+            />
+          ) : (
+            <JobGalaxy
+              graph={graph}
+              selected={galaxySelection}
+              selectedSkillIds={selectedSkillIds}
+              onSelect={handleSelect}
+              layerView={layerView}
+              skillCategoryFilterId={selectedNode?.type === "skill" ? skillCategoryFilterId : null}
+            />
+          )}
         </div>
         {layerView === "skill" && skillViewMode === "dag" ? (
           <SkillDagPanel
@@ -272,174 +185,12 @@ function App({ language, onLanguageChange }) {
   );
 }
 
-function CompanyToolbar({ companyKey, onChange, disabled = false }) {
-  const { t } = useI18n();
-  return (
-    <div className="company-toolbar">
-      <div className="company-toolbar-copy">
-        <strong>{t("招聘数据源")}</strong>
-        <span>{t("点击切换公司")}</span>
-      </div>
-      <div className="company-selector" role="tablist" aria-label={t("选择公司")}>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={companyKey === "all"}
-          className={companyKey === "all" ? "active" : ""}
-          disabled={disabled}
-          onClick={() => onChange("all")}
-        >
-          <Building2 size={14} />
-          {t("全部")}
-        </button>
-        {COMPANY_KEYS.map((key) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={companyKey === key}
-            className={companyKey === key ? "active" : ""}
-            disabled={disabled}
-            onClick={() => onChange(key)}
-          >
-            {t(COMPANY_CONFIGS[key].LABEL)}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function LanguageToggle({ language, onChange }) {
-  const { t } = useI18n();
-  return (
-    <div className="language-toggle" role="group" aria-label={t("切换界面语言")}>
-      <button
-        type="button"
-        className={language === "zh" ? "active" : ""}
-        aria-pressed={language === "zh"}
-        onClick={() => onChange("zh")}
-      >
-        中文
-      </button>
-      <button
-        type="button"
-        className={language === "en" ? "active" : ""}
-        aria-pressed={language === "en"}
-        onClick={() => onChange("en")}
-      >
-        EN
-      </button>
-    </div>
-  );
-}
-
-function JobSearch({ graph = null, onSelect, disabled = false }) {
-  const { t } = useI18n();
-  const rootRef = useRef(null);
-  const inputRef = useRef(null);
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const results = useMemo(
-    () => (graph && query.trim() ? searchJobs(graph, query, 12) : []),
-    [graph, query],
-  );
-
-  useEffect(() => {
-    const handleOutsideClick = (event) => {
-      if (!rootRef.current?.contains(event.target)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", handleOutsideClick);
-    return () => document.removeEventListener("pointerdown", handleOutsideClick);
-  }, []);
-
-  const selectJob = (job) => {
-    onSelect?.({ id: job.id, type: "job" });
-    setOpen(false);
-  };
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    if (results[0]) selectJob(results[0]);
-  };
-
-  return (
-    <div className="header-search" ref={rootRef}>
-      <form role="search" onSubmit={handleSubmit}>
-        <Search size={17} aria-hidden="true" />
-        <input
-          ref={inputRef}
-          type="search"
-          value={query}
-          disabled={disabled}
-          placeholder={disabled ? t("正在准备岗位搜索...") : t("搜索岗位、技能、类别或公司")}
-          aria-label={t("搜索岗位")}
-          aria-expanded={open && Boolean(query.trim())}
-          aria-controls="job-search-results"
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              setOpen(false);
-              inputRef.current?.blur();
-            }
-          }}
-        />
-        {query ? (
-          <button
-            className="search-clear"
-            type="button"
-            aria-label={t("清除搜索")}
-            onClick={() => {
-              setQuery("");
-              inputRef.current?.focus();
-            }}
-          >
-            ×
-          </button>
-        ) : null}
-      </form>
-      {open && query.trim() ? (
-        <div className="search-results" id="job-search-results" role="listbox">
-          {results.length > 0 ? (
-            <>
-              <div className="search-results-count">{t("显示最相关的 {count} 个岗位角色", { count: results.length })}</div>
-              {results.map((job) => {
-                const category = graph.nodeById.get(job.categoryId);
-                return (
-                  <button
-                    key={job.id}
-                    type="button"
-                    role="option"
-                    onClick={() => selectJob(job)}
-                  >
-                    <strong>{job.label}</strong>
-                    <span>
-                      {t(job.sourceLabel)} · {t(category?.label || "其他")} · {t("{count} 个招聘发布", { count: job.postingCount })}
-                    </span>
-                  </button>
-                );
-              })}
-            </>
-          ) : (
-            <p>{t("没有匹配的岗位角色")}</p>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function ViewToggle({ activeView, onChange }) {
-  const { t } = useI18n();
   return (
-    <div className="layer-legend" role="group" aria-label={t("图谱视图")}>
+    <div className="layer-legend" role="group" aria-label="图谱视图">
       {[
-        ["category", t("大类")],
-        ["skill", t("技能")],
+        ["category", "大类"],
+        ["skill", "技能"],
       ].map(([id, label]) => (
         <button key={id} type="button" aria-pressed={activeView === id} onClick={() => onChange(id)}>
           {label}
@@ -450,12 +201,11 @@ function ViewToggle({ activeView, onChange }) {
 }
 
 function SkillViewToggle({ activeView, onChange }) {
-  const { t } = useI18n();
   return (
-    <div className="skill-view-toggle" role="group" aria-label={t("技能视图模式")}>
+    <div className="skill-view-toggle" role="group" aria-label="技能视图模式">
       {[
-        ["frequency", t("频次分布")],
-        ["dag", t("加点 DAG")],
+        ["frequency", "频次分布"],
+        ["dag", "加点 DAG"],
       ].map(([id, label]) => (
         <button key={id} type="button" aria-pressed={activeView === id} onClick={() => onChange(id)}>
           {label}
@@ -488,7 +238,6 @@ function InfoPanel({
   onRelatedJobSelect,
   onSkillSelect,
 }) {
-  const { t } = useI18n();
   const showSkillOverview = layerView === "skill";
   if (!selectedNode) {
     return (
@@ -500,13 +249,13 @@ function InfoPanel({
         onSkillSelect={onSkillSelect}
       >
         <div className="panel-section">
-          <p className="panel-kicker">{t("默认视图")}</p>
-          <h2>{t("所有大类技能频次")}</h2>
+          <p className="panel-kicker">默认视图</p>
+          <h2>所有大类技能频次</h2>
           <p className="muted">
-            {t("当前为全链接状态，展示全部大类下技能提及次数的汇总排序。点击大类或职位可以进入局部关系视图。")}
+            当前为全链接状态，展示全部大类下技能提及次数的汇总排序。点击大类或职位可以进入局部关系视图。
           </p>
         </div>
-        <TopSkillList title={t("全部技能频次")} skills={graph.globalSkillRanking} />
+        <TopSkillList title="全部技能频次" skills={graph.globalSkillRanking} />
       </InfoShell>
     );
   }
@@ -527,16 +276,57 @@ function InfoPanel({
   }
 
   if (selectedNode.type === "job") {
+    const job = selectedNode;
+    const ranking = graph.skillRankingByCategory.get(job.categoryId) || [];
+    const categoryFrequency = new Map(ranking.map((item) => [item.id, item.count]));
+    const sortedSkills = job.skillIds
+      .map((id) => graph.nodeById.get(id))
+      .filter(Boolean)
+      .sort((a, b) => (categoryFrequency.get(b.id) || 0) - (categoryFrequency.get(a.id) || 0));
+
     return (
-      <JobRolePanel
+      <InfoShell
         graph={graph}
-        job={selectedNode}
-        category={selectedCategory}
+        activeCategoryId={selectedCategory?.id}
         skillOverview={showSkillOverview}
         selectedSkillIds={selectedSkillIds}
-        onCategorySelect={onCategorySelect}
+        onPieCategoryChange={onCategorySelect}
         onSkillSelect={onSkillSelect}
-      />
+      >
+        <div className="panel-section">
+          <p className="panel-kicker">职位</p>
+          <h2>{job.label}</h2>
+          <p className="muted">所属大类：{selectedCategory?.label || "其他"}</p>
+          <a
+            className="primary-link"
+            href={job.url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => trackJobLink(job)}
+          >
+            查看原始岗位
+          </a>
+        </div>
+        <div className="panel-section">
+          <h3>技能要求</h3>
+          {sortedSkills.length > 0 ? (
+            <div className="skill-cloud">
+              {sortedSkills.map((skill) => (
+                <span key={skill.id}>
+                  {skill.label}
+                  <b>{categoryFrequency.get(skill.id) || 1}</b>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">这条岗位没有命中当前技能词典，可在词典配置中补充关键词。</p>
+          )}
+        </div>
+        <div className="panel-section">
+          <h3>职位要求摘要</h3>
+          <p className="requirement-text">{job.requirement || "暂无职位要求文本。"}</p>
+        </div>
+      </InfoShell>
     );
   }
 
@@ -559,59 +349,6 @@ function InfoPanel({
   return null;
 }
 
-function JobRolePanel({
-  graph,
-  job,
-  category,
-  skillOverview,
-  selectedSkillIds,
-  onCategorySelect,
-  onSkillSelect,
-}) {
-  const { t } = useI18n();
-  const ranking = graph.skillRankingByCategory.get(job.categoryId) || [];
-  const categoryFrequency = new Map(ranking.map((item) => [item.id, item.count]));
-  const sortedSkills = job.skillIds
-    .map((id) => graph.nodeById.get(id))
-    .filter(Boolean)
-    .sort((a, b) => (categoryFrequency.get(b.id) || 0) - (categoryFrequency.get(a.id) || 0));
-  const detailState = useRoleDetails(job);
-
-  return (
-    <InfoShell
-      graph={graph}
-      activeCategoryId={category?.id}
-      skillOverview={skillOverview}
-      selectedSkillIds={selectedSkillIds}
-      onPieCategoryChange={onCategorySelect}
-      onSkillSelect={onSkillSelect}
-    >
-      <div className="panel-section">
-        <p className="panel-kicker">{t("岗位角色")}</p>
-        <h2>{job.label}</h2>
-        <p className="muted">{t("所属大类：")}{t(category?.label || "其他")}</p>
-        <RoleSummary job={job} />
-      </div>
-      <div className="panel-section">
-        <h3>{t("技能要求")}</h3>
-        {sortedSkills.length > 0 ? (
-          <div className="skill-cloud">
-            {sortedSkills.map((skill) => (
-              <span key={skill.id}>
-                {t(skill.label)}
-                <b>{categoryFrequency.get(skill.id) || 1}</b>
-              </span>
-            ))}
-          </div>
-        ) : (
-          <p className="muted">{t("这条岗位没有命中当前技能词典，可在词典配置中补充关键词。")}</p>
-        )}
-      </div>
-      <RoleDetails job={job} {...detailState} />
-    </InfoShell>
-  );
-}
-
 function CategoryPanel({
   graph,
   category,
@@ -622,7 +359,6 @@ function CategoryPanel({
   onRelatedJobSelect,
   onSkillSelect,
 }) {
-  const { t } = useI18n();
   const jobs = sortRelatedJobs(graph.jobsByCategory.get(category.id) || [], category.key);
   const ranking = graph.skillRankingByCategory.get(category.id) || [];
   const combinations = graph.skillTripleRankingByCategory.get(category.id) || [];
@@ -637,16 +373,16 @@ function CategoryPanel({
       onSkillSelect={onSkillSelect}
     >
       <div className="panel-section">
-        <p className="panel-kicker">{t("岗位大类")}</p>
-        <h2>{t(category.label)}</h2>
+        <p className="panel-kicker">岗位大类</p>
+        <h2>{category.label}</h2>
         <p className="muted">
-          {t("共 {jobs} 个细分岗位，命中 {skills} 个技能关键词。", { jobs: jobs.length, skills: ranking.length })}
+          共 {jobs.length} 个细分岗位，命中 {ranking.length} 个技能关键词。
         </p>
       </div>
       {!skillOverview && <SkillCombinationTable combinations={combinations.slice(0, 3)} />}
-      <TopSkillList title={t("该类技能频次")} skills={ranking.slice(0, 10)} />
+      <TopSkillList title="该类技能频次" skills={ranking.slice(0, 10)} />
       <div className="panel-section">
-        <h3>{t("关联职位")}</h3>
+        <h3>关联职位</h3>
         <div className="job-list">
           {jobs.slice(0, 30).map((job) => (
             <JobListItem
@@ -664,17 +400,16 @@ function CategoryPanel({
 }
 
 function SkillCombinationTable({ combinations }) {
-  const { t } = useI18n();
   return (
     <div className="panel-section skill-combination-section">
-      <h3>{t("高频三技能组合")}</h3>
+      <h3>高频三技能组合</h3>
       {combinations.length > 0 ? (
         <table className="skill-combination-table">
           <thead>
             <tr>
-              <th>{t("技能组合")}</th>
-              <th>{t("岗位")}</th>
-              <th>{t("占比")}</th>
+              <th>技能组合</th>
+              <th>岗位</th>
+              <th>占比</th>
             </tr>
           </thead>
           <tbody>
@@ -682,7 +417,7 @@ function SkillCombinationTable({ combinations }) {
               <tr key={combination.id}>
                 <td>
                   <div className="skill-combination-chips">
-                  {combination.skills.map((skill) => <span key={skill.id}>{t(skill.label)}</span>)}
+                    {combination.skills.map((skill) => <span key={skill.id}>{skill.label}</span>)}
                   </div>
                 </td>
                 <td>{combination.count}</td>
@@ -692,9 +427,9 @@ function SkillCombinationTable({ combinations }) {
           </tbody>
         </table>
       ) : (
-        <p className="muted">{t("暂无满足统计条件的三技能组合。")}</p>
+        <p className="muted">暂无满足统计条件的三技能组合。</p>
       )}
-      <p className="skill-combination-note">{t("按同一岗位共同出现计数；已排除多门替代语言与同类框架堆叠。")}</p>
+      <p className="skill-combination-note">按同一岗位共同出现计数；已排除多门替代语言与同类框架堆叠。</p>
     </div>
   );
 }
@@ -710,7 +445,6 @@ function SkillPanel({
   onRelatedJobSelect,
   onSkillSelect,
 }) {
-  const { t } = useI18n();
   const activeSkillIds = selectedSkillIds.length > 0 ? selectedSkillIds : [skill.id];
   const selectedSkills = activeSkillIds.map((skillId) => graph.nodeById.get(skillId)).filter(Boolean);
   const isSkillCombination = selectedSkills.length > 1;
@@ -735,7 +469,7 @@ function SkillPanel({
       graph={graph}
       pieSkill={skill}
       pieJobs={jobs}
-      pieTitle={isSkillCombination ? t("技能组合分布") : t("技能分布")}
+      pieTitle={isSkillCombination ? "技能组合分布" : "技能分布"}
       skillOverview={skillOverview}
       selectedSkillIds={selectedSkillIds}
       activeCategoryId={activeCategoryId}
@@ -743,17 +477,13 @@ function SkillPanel({
       onSkillSelect={onSkillSelect}
     >
       <div className="panel-section">
-        <h3>
-          {activeCategoryId
-            ? `${t(graph.nodeById.get(activeCategoryId)?.label || "当前大类")} · ${t("相关岗位")}`
-            : t("相关岗位")}
-        </h3>
+        <h3>{activeCategoryId ? `${graph.nodeById.get(activeCategoryId)?.label || "当前大类"}相关岗位` : "相关岗位"}</h3>
         <div className="category-job-groups">
           {visibleGroups.length > 0 ? (
             visibleGroups.map((group, index) => (
               <details key={group.category.id} className="category-job-group" open={index === 0}>
                 <summary className="group-title">
-                  <span>{t(group.category.label)}</span>
+                  <span>{group.category.label}</span>
                   <b>{group.jobs.length}</b>
                 </summary>
                 <div className="job-list">
@@ -770,7 +500,7 @@ function SkillPanel({
               </details>
             ))
           ) : (
-            <p className="muted">{t("该技能在当前大类中没有关联岗位。")}</p>
+            <p className="muted">该技能在当前大类中没有关联岗位。</p>
           )}
         </div>
       </div>
@@ -826,7 +556,6 @@ const CategoryPieChart = React.memo(function CategoryPieChart({
   onCategorySelect,
   onSkillSelect,
 }) {
-  const { t } = useI18n();
   const [activeIndex, setActiveIndex] = useState(null);
   const isSkillDistribution = Boolean(skill || filteredJobs);
   const rows = useMemo(() => {
@@ -837,8 +566,8 @@ const CategoryPieChart = React.memo(function CategoryPieChart({
       return [
         ...topSkills.map((item, index) => ({
           id: item.id,
-          label: t(item.label),
-          name: t(item.label),
+          label: item.label,
+          name: item.label,
           color: `hsl(${(index * 47 + 165) % 360} 68% 62%)`,
           count: item.count,
           value: item.count,
@@ -847,8 +576,8 @@ const CategoryPieChart = React.memo(function CategoryPieChart({
         })),
         {
           id: "skill:other",
-          label: t("其他技能"),
-          name: t("其他技能"),
+          label: "其他技能",
+          name: "其他技能",
           color: "#6f7d8b",
           count: otherCount,
           value: otherCount,
@@ -858,11 +587,7 @@ const CategoryPieChart = React.memo(function CategoryPieChart({
       ];
     }
 
-    const total = filteredJobs
-      ? filteredJobs.length || 1
-      : skill
-        ? graph.jobsBySkill.get(skill.id)?.length || 1
-        : graph.stats.roleCount || graph.jobs.length || 1;
+    const total = filteredJobs ? filteredJobs.length || 1 : skill ? graph.jobsBySkill.get(skill.id)?.length || 1 : graph.stats.totalJobs || 1;
     const jobsByCategory = skill ? graph.jobsBySkillAndCategory.get(skill.id) : graph.jobsByCategory;
     return graph.categories
       .map((category) => {
@@ -871,8 +596,8 @@ const CategoryPieChart = React.memo(function CategoryPieChart({
           : jobsByCategory?.get(category.id)?.length || 0;
         return {
           id: category.id,
-          label: t(category.label),
-          name: t(category.label),
+          label: category.label,
+          name: category.label,
           color: category.color,
           count,
           value: count,
@@ -881,7 +606,7 @@ const CategoryPieChart = React.memo(function CategoryPieChart({
       })
       .filter((row) => isSkillDistribution || row.count > 0)
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  }, [filteredJobs, graph, isSkillDistribution, skill, skillOverview, t]);
+  }, [filteredJobs, graph, isSkillDistribution, skill, skillOverview]);
   const labelLayout = buildPieLabelLayout(rows);
 
   useEffect(() => {
@@ -910,15 +635,11 @@ const CategoryPieChart = React.memo(function CategoryPieChart({
 
   return (
     <div className="panel-section pie-section">
-      <p className="panel-kicker">{skillOverview ? t("技能频次分布") : isSkillDistribution ? distributionTitle || t("技能分布") : t("岗位分布")}</p>
+      <p className="panel-kicker">{skillOverview ? "技能频次分布" : isSkillDistribution ? distributionTitle || "技能分布" : "岗位分布"}</p>
       <div className="pie-layout">
         <div
           className="pie-chart"
-          aria-label={skillOverview
-            ? t("前十五技能频次分布饼图")
-            : isSkillDistribution
-              ? `${distributionTitle || t("当前技能")} ${t("大类占比饼图")}`
-              : t("岗位大类分布饼图")}
+          aria-label={skillOverview ? "前十五技能频次分布饼图" : isSkillDistribution ? `${distributionTitle || "当前技能"}大类占比饼图` : "岗位大类分布饼图"}
         >
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
@@ -1097,12 +818,9 @@ function renderPieLabel({ cx, cy, midAngle, outerRadius, name, payload, index },
 }
 
 function PieTooltip({ active, payload, mode }) {
-  const { t } = useI18n();
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
-  const countLabel = mode === "skill-overview"
-    ? t("{count} 次提及", { count: row.count })
-    : `${t("{count} 个岗位", { count: row.count })}${mode === "skill" ? t("提及") : ""}`;
+  const countLabel = mode === "skill-overview" ? `${row.count} 次提及` : `${row.count} 个岗位${mode === "skill" ? "提及" : ""}`;
   return (
     <div className="pie-tooltip">
       <strong>{row.label}</strong>
@@ -1129,92 +847,33 @@ function JobListItem({ job, category, active, onToggle }) {
 }
 
 function JobInfoCard({ job, category, embedded = false }) {
-  const { t } = useI18n();
-  const detailState = useRoleDetails(job);
   return (
     <div className={embedded ? "selected-job-card embedded" : "panel-section selected-job-card"}>
-      <p className="panel-kicker">{t("岗位角色")}</p>
+      <p className="panel-kicker">岗位信息</p>
       <h3>{job.label}</h3>
-      <p className="muted">{t("所属大类：")}{t(category?.label || "其他")}</p>
-      <RoleSummary job={job} />
-      <RoleDetails job={job} compact {...detailState} />
-    </div>
-  );
-}
-
-function RoleSummary({ job }) {
-  const { t } = useI18n();
-  return (
-    <div className="role-summary">
-      <span>{t("{count} 个招聘发布", { count: job.postingCount })}</span>
-    </div>
-  );
-}
-
-function useRoleDetails(job) {
-  const [state, setState] = useState({ details: null, loading: true, error: null });
-
-  useEffect(() => {
-    let cancelled = false;
-    setState({ details: null, loading: true, error: null });
-    loadRoleDetails(job.source, job.roleId)
-      .then((details) => {
-        if (!cancelled) setState({ details, loading: false, error: details ? null : "missing" });
-      })
-      .catch((error) => {
-        if (!cancelled) setState({ details: null, loading: false, error: error.message });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [job.source, job.roleId]);
-
-  return state;
-}
-
-function RoleDetails({ job, details, loading, error, compact = false }) {
-  const { t } = useI18n();
-  const className = compact ? "role-details compact" : "panel-section role-details";
-  if (loading) {
-    return <div className={className}><p className="muted">{t("正在加载完整职位描述和招聘链接...")}</p></div>;
-  }
-  if (error || !details) {
-    const message = error === "missing" ? t("未找到岗位详情") : error || t("未知错误");
-    return <div className={className}><p className="muted">{t("岗位详情加载失败：{error}", { error: message })}</p></div>;
-  }
-  return (
-    <div className={className}>
+      <p className="muted">所属大类：{category?.label || "其他"}</p>
+      <a
+        className="primary-link"
+        href={job.url}
+        target="_blank"
+        rel="noreferrer"
+        onClick={() => trackJobLink(job)}
+      >
+        查看原始岗位
+      </a>
       <div className="job-detail-block">
-        <h4>{t("职位描述")}</h4>
-        <p>{details.description || t("暂无职位描述文本。")}</p>
+        <h4>职位描述</h4>
+        <p>{job.description || "暂无职位描述文本。"}</p>
       </div>
       <div className="job-detail-block">
-        <h4>{t("职位要求")}</h4>
-        <p>{details.requirement || t("暂无职位要求文本。")}</p>
-      </div>
-      <div className="job-detail-block">
-        <h4>{t("招聘链接")}</h4>
-        <div className="role-variants">
-          {details.variants.map((variant, index) => (
-            <a
-              key={`${variant.job_id}:${index}`}
-              href={variant.url}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => trackJobLink({ ...job, jobId: variant.job_id, url: variant.url })}
-            >
-              <strong>{variant.title}</strong>
-              <small>{variant.display_job_id || variant.job_id}</small>
-            </a>
-          ))}
-        </div>
+        <h4>职位要求</h4>
+        <p>{job.requirement || "暂无职位要求文本。"}</p>
       </div>
     </div>
   );
 }
 
 function TopSkillList({ title, skills }) {
-  const { t } = useI18n();
   return (
     <div className="panel-section">
       <h3>{title}</h3>
@@ -1222,7 +881,7 @@ function TopSkillList({ title, skills }) {
         {skills.map((skill, index) => (
           <div key={skill.id} className="rank-row">
             <span>{String(index + 1).padStart(2, "0")}</span>
-            <strong>{t(skill.label)}</strong>
+            <strong>{skill.label}</strong>
             <em>{skill.count}</em>
           </div>
         ))}
@@ -1235,26 +894,7 @@ function trackJobLink(job) {
   track("job_link_opened", {
     job_id: job.id,
     job_title: job.label,
-    source: job.source,
   });
 }
 
-function LanguageRoot() {
-  const [language, setLanguage] = useState(() => localStorage.getItem("goodjob_language") || "zh");
-
-  useEffect(() => {
-    document.documentElement.lang = language === "en" ? "en" : "zh-CN";
-    localStorage.setItem("goodjob_language", language);
-  }, [language]);
-
-  return (
-    <I18nProvider language={language}>
-      <App language={language} onLanguageChange={setLanguage} />
-      <Analytics />
-    </I18nProvider>
-  );
-}
-
-createRoot(document.getElementById("root")).render(
-  <LanguageRoot />,
-);
+createRoot(document.getElementById("root")).render(<Root ExploreApp={App} />);

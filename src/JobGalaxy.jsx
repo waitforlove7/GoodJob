@@ -1,17 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { graphForSelection, jobsMatchingAllSkills } from "./jobGraph.js";
-import { useI18n } from "./i18n.jsx";
+import { jobsMatchingAllSkills } from "./jobGraph.js";
 
 const TYPE_STYLE = {
-  category: { emissive: 0x113344, opacity: 1 },
-  job: { emissive: 0x071427, opacity: 0.88 },
-  skill: { emissive: 0x17120c, opacity: 0.8 },
+  category: { emissive: 0xd1fae5, opacity: 1 },
+  job: { emissive: 0xe8f5e9, opacity: 0.92 },
+  skill: { emissive: 0xf0fdf4, opacity: 0.88 },
 };
 
 export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, layerView, skillCategoryFilterId }) {
-  const { t } = useI18n();
   const mountRef = useRef(null);
   const sceneRef = useRef(null);
   const objectsRef = useRef(new Map());
@@ -23,31 +21,6 @@ export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, la
   const onSelectRef = useRef(onSelect);
   const layerViewRef = useRef(layerView);
   const [tooltip, setTooltip] = useState(null);
-  const selectedGraphNode = selected ? graph.nodeById.get(selected.id) : null;
-  const expandedCategoryId = selectedGraphNode?.type === "category"
-    ? selectedGraphNode.id
-    : selectedGraphNode?.type === "job"
-      ? selectedGraphNode.categoryId
-      : null;
-  const selectedSkillId = selectedGraphNode?.type === "skill" ? selectedGraphNode.id : null;
-  const sceneGraph = useMemo(
-    () => graphForSelection(
-      graph,
-      selectedSkillId
-        ? { id: selectedSkillId, type: "skill" }
-        : expandedCategoryId
-          ? { id: expandedCategoryId, type: "category" }
-          : null,
-      { selectedSkillIds, skillCategoryFilterId },
-    ),
-    [graph, expandedCategoryId, selectedSkillId, selectedSkillIds, skillCategoryFilterId],
-  );
-  const localizedSceneGraph = useMemo(() => ({
-    ...sceneGraph,
-    nodes: sceneGraph.nodes.map((node) => (
-      node.type === "category" || node.type === "skill" ? { ...node, label: t(node.label) } : node
-    )),
-  }), [sceneGraph, t]);
 
   const highlighted = useMemo(
     () => buildHighlightSet(graph, selected, skillCategoryFilterId, selectedSkillIds),
@@ -61,13 +34,11 @@ export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, la
     const skills = activeSkillIds.map((skillId) => graph.nodeById.get(skillId)).filter(Boolean);
     const jobCount = jobsMatchingAllSkills(graph, activeSkillIds).length;
     return {
-      label: skills.length > 1 ? t("技能组合") : t("技能"),
-      title: skills.map((skill) => t(skill.label)).join(" + "),
-      description: skills.length > 1
-        ? t("同时满足这些技能的岗位共 {count} 个。", { count: jobCount })
-        : t("该技能被 {count} 个岗位提到。", { count: jobCount }),
+      label: skills.length > 1 ? "技能组合" : "技能",
+      title: skills.map((skill) => skill.label).join(" + "),
+      description: skills.length > 1 ? `同时满足这些技能的岗位共 ${jobCount} 个。` : `该技能被 ${jobCount} 个岗位提到。`,
     };
-  }, [graph, selected, selectedSkillIds, t]);
+  }, [graph, selected, selectedSkillIds]);
 
   useEffect(() => {
     selectedRef.current = selected;
@@ -90,8 +61,8 @@ export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, la
     if (!mount) return undefined;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x071018);
-    scene.fog = new THREE.Fog(0x071018, 120, 240);
+    scene.background = new THREE.Color(0xf5f9f6);
+    scene.fog = new THREE.Fog(0xf5f9f6, 120, 240);
     sceneRef.current = scene;
 
     const aspect = mount.clientWidth / mount.clientHeight;
@@ -114,12 +85,12 @@ export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, la
     const key = new THREE.DirectionalLight(0xffffff, 1.25);
     key.position.set(18, 42, 26);
     scene.add(key);
-    const fill = new THREE.PointLight(0x4dd6ff, 1.3, 160);
+    const fill = new THREE.PointLight(0x22c55e, 0.9, 160);
     fill.position.set(-28, 10, 32);
     scene.add(fill);
 
     addReferenceRings(scene);
-    createGraphObjects(scene, localizedSceneGraph, objectsRef.current, linesRef.current);
+    createGraphObjects(scene, graph, objectsRef.current, linesRef.current);
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -232,7 +203,7 @@ export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, la
       objectsRef.current.clear();
       linesRef.current = [];
     };
-  }, [localizedSceneGraph]);
+  }, [graph]);
 
   useEffect(() => {
     applyHighlight(objectsRef.current, linesRef.current, highlighted, skillVisuals);
@@ -249,7 +220,7 @@ export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, la
             ...node.skillIds
               .map((id) => graph.nodeById.get(id))
               .filter(Boolean)
-              .map((skill) => ({ id: skill.id, type: "skill", label: t(skill.label) })),
+              .map((skill) => ({ id: skill.id, type: "skill", label: skill.label })),
           ]
         : [];
 
@@ -261,7 +232,7 @@ export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, la
         element.dataset.nodeId = item.id;
 
         const type = document.createElement("span");
-        type.textContent = item.type === "skill" ? "" : typeLabel(item.type, t);
+        type.textContent = item.type === "skill" ? "" : typeLabel(item.type);
         if (item.type === "skill") type.hidden = true;
         const label = document.createElement("strong");
         label.textContent = item.label;
@@ -269,21 +240,21 @@ export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, la
         return element;
       }),
     );
-  }, [graph, selected, t]);
+  }, [graph, selected]);
 
   return (
-    <div className="galaxy" ref={mountRef} aria-label={t("岗位技能三维关系图")}>
+    <div className="galaxy" ref={mountRef} aria-label="岗位技能三维关系图">
       <div className="skill-heat-legend" aria-hidden="true">
-        <span style={{ "--heat-color": "#6ee7a8" }}>{t("低频")}</span>
-        <span style={{ "--heat-color": "#d6e85f" }}>{t("中低")}</span>
-        <span style={{ "--heat-color": "#ffb347" }}>{t("中高")}</span>
-        <span style={{ "--heat-color": "#ff5f57" }}>{t("高频")}</span>
+        <span style={{ "--heat-color": "#6ee7a8" }}>低频</span>
+        <span style={{ "--heat-color": "#d6e85f" }}>中低</span>
+        <span style={{ "--heat-color": "#ffb347" }}>中高</span>
+        <span style={{ "--heat-color": "#ff5f57" }}>高频</span>
       </div>
       <div className="job-heat-legend" aria-hidden="true">
-        <strong>{t("岗位技能数")}</strong>
-        <span>{t("少")}</span>
+        <strong>岗位技能数</strong>
+        <span>少</span>
         <i />
-        <span>{t("多")}</span>
+        <span>多</span>
       </div>
       {skillSelectionSummary ? (
         <div className="skill-selection-summary" aria-live="polite">
@@ -294,7 +265,7 @@ export function JobGalaxy({ graph, selected, selectedSkillIds = [], onSelect, la
       ) : null}
       {tooltip ? (
         <div className="tooltip" style={{ left: tooltip.x + 14, top: tooltip.y + 14 }}>
-          <span>{typeLabel(tooltip.type, t)}</span>
+          <span>{typeLabel(tooltip.type)}</span>
           {tooltip.label}
         </div>
       ) : null}
@@ -559,8 +530,6 @@ function buildHighlightSet(graph, selected, skillCategoryFilterId, selectedSkill
     for (const job of matchingJobs) {
       if (activeSkillCategoryFilterId && job.categoryId !== activeSkillCategoryFilterId) continue;
       nodes.add(job.id);
-      nodes.add(job.categoryId);
-      links.add(`${job.categoryId}->${job.id}`);
       for (const skillId of activeSkillIds) {
         links.add(`${job.id}->${skillId}`);
       }
@@ -671,10 +640,10 @@ function disposeScene(scene) {
   });
 }
 
-function typeLabel(type, t) {
-  if (type === "category") return t("大类");
-  if (type === "job") return t("职位");
-  return t("技能");
+function typeLabel(type) {
+  if (type === "category") return "大类";
+  if (type === "job") return "职位";
+  return "技能";
 }
 
 function inactiveNodeOpacity(nodeType, selectedType) {
