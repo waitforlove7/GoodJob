@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Analytics, track } from "@vercel/analytics/react";
-import { Activity, BriefcaseBusiness, Building2, Layers3, Search, Sparkles } from "lucide-react";
+import { Activity, BriefcaseBusiness, Building2, Layers3, Search, Sparkles, User } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Sector, Tooltip } from "recharts";
 import { buildJobGraph, jobsMatchingAllSkills, searchJobs, sortRelatedJobs } from "./jobGraph.js";
 import { JobGalaxy } from "./JobGalaxy.jsx";
 import { SkillDag, SkillDagPanel } from "./SkillDag.jsx";
+import { ProfilePage } from "./ProfilePage.jsx";
 import "./styles.css";
 import { I18nProvider, useI18n } from "./i18n.jsx";
 import {
@@ -29,12 +30,30 @@ function App({ language, onLanguageChange }) {
   const [masteredSkillIds, setMasteredSkillIds] = useState([]);
   const [relatedJobId, setRelatedJobId] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileTargets, setProfileTargets] = useState([]);
+  const [profileMasteredSkillIds, setProfileMasteredSkillIds] = useState([]);
+  const graphCache = useRef(new Map());
 
   const handleCompanyChange = useCallback((nextCompanyKey) => {
     setCompanyKey(nextCompanyKey);
   }, []);
 
   useEffect(() => {
+    const cacheKey = companyKey;
+    const cached = graphCache.current.get(cacheKey);
+    if (cached) {
+      setGraph(cached);
+      setSelected(null);
+      setSelectedSkillIds([]);
+      setMasteredSkillIds([]);
+      setRelatedJobId(null);
+      setSkillCategoryFilterId(null);
+      setSkillViewMode("frequency");
+      setLayerView("category");
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
     setSelected(null);
@@ -56,6 +75,7 @@ function App({ language, onLanguageChange }) {
         }
         const g = buildJobGraph(payload, { source: payload.source, categoryOverrides: overrides });
         if (!cancelled) {
+          graphCache.current.set(cacheKey, g);
           setGraph(g);
           setSelected(null);
         }
@@ -136,6 +156,10 @@ function App({ language, onLanguageChange }) {
     handleSelect(null);
   }, [handleSelect, layerView]);
 
+  const handleAddTarget = useCallback((target) => { setProfileTargets(prev => [...prev, target]); }, []);
+  const handleRemoveTarget = useCallback((idx) => { setProfileTargets(prev => prev.filter((_, i) => i !== idx)); }, []);
+  const handleToggleProfileSkill = useCallback((skillId) => { setProfileMasteredSkillIds(prev => prev.includes(skillId) ? prev.filter(id => id !== skillId) : [...prev, skillId]); }, []);
+
   const handleToggleMasteredSkill = useCallback((skillId) => {
     setMasteredSkillIds((current) =>
       current.includes(skillId) ? current.filter((id) => id !== skillId) : [...current, skillId],
@@ -160,7 +184,10 @@ function App({ language, onLanguageChange }) {
             <small>Web Mining Group1</small>
           </a>
           <JobSearch disabled />
-          <LanguageToggle language={language} onChange={onLanguageChange} />
+          <div className="header-actions">
+            <button className="profile-header-btn" onClick={() => setShowProfile(true)} aria-label={t("profile_btn")}><User size={16} /></button>
+            <LanguageToggle language={language} onChange={onLanguageChange} />
+          </div>
         </header>
         <section className="workspace" id="explore">
           <div className="visualization-column">
@@ -194,10 +221,26 @@ function App({ language, onLanguageChange }) {
           <small>Web Mining Group1</small>
         </a>
         <JobSearch graph={graph} onSelect={handleSelect} disabled={loading} />
-        <LanguageToggle language={language} onChange={onLanguageChange} />
+        <div className="header-actions">
+            <button className="profile-header-btn" onClick={() => setShowProfile(true)} aria-label={t("profile_btn")}><User size={16} /></button>
+            <LanguageToggle language={language} onChange={onLanguageChange} />
+          </div>
       </header>
-
-      <section className="hero-panel" id="top">
+        {showProfile ? (
+          <div className="profile-shell">
+            <ProfilePage
+            graph={graph}
+            profileTargets={profileTargets}
+            profileMasteredSkillIds={profileMasteredSkillIds}
+            onAddTarget={handleAddTarget}
+            onRemoveTarget={handleRemoveTarget}
+            onToggleProfileSkill={handleToggleProfileSkill}
+            onClose={() => setShowProfile(false)}
+            />
+          </div>
+        ) : (
+        <>
+        <section className="hero-panel" id="top">
         <div className="title-block">
           <h1>{t("看见岗位之间的")}<br /><em>{t("隐形连接")}</em></h1>
           <p>
@@ -268,6 +311,8 @@ function App({ language, onLanguageChange }) {
           />
         )}
       </section>
+        </>
+        )}
     </main>
   );
 }

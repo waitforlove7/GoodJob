@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useMemo, useRef, useState } from "react";
 import { buildSkillDagModel, evaluateSkillDag, suggestedSkillRowsForCategory } from "./skillDag.js";
 import { useI18n } from "./i18n.jsx";
 
@@ -20,27 +20,13 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
   const { t } = useI18n();
   const model = useMemo(() => buildSkillDagModel(graph), [graph]);
   const initialLayout = useMemo(() => buildInitialLayout(model), [model]);
-  const motionBySkillId = useMemo(
-    () => new Map(model.skills.map((skill) => [skill.id, buildBrownianMotion(skill.id)])),
-    [model.skills],
-  );
   const [positions, setPositions] = useState(initialLayout.positions);
-  const [motionEnabled, setMotionEnabled] = useState(() =>
-    typeof window === "undefined" || !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  );
   const svgRef = useRef(null);
   const dragRef = useRef(null);
   const selected = useMemo(() => new Set(selectedSkillIds), [selectedSkillIds]);
   const matches = useMemo(() => evaluateSkillDag(model, selected), [model, selected]);
   const matchByCategoryId = new Map(matches.map((match) => [match.category.id, match]));
   const recommendedCategoryId = matches.find((match) => match.matchedCount >= CATEGORY_HIGHLIGHT_THRESHOLD)?.category.id || null;
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const updateMotion = () => setMotionEnabled(!mediaQuery.matches);
-    mediaQuery.addEventListener("change", updateMotion);
-    return () => mediaQuery.removeEventListener("change", updateMotion);
-  }, []);
 
   const startDrag = (event, nodeId) => {
     const point = clientPointToSvg(event, svgRef.current);
@@ -124,6 +110,7 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
 
         {model.categories.map((category) => {
           const position = positions[category.id];
+          if (!position) return null;
           const match = matchByCategoryId.get(category.id);
           const highlighted = (match?.matchedCount || 0) >= CATEGORY_HIGHLIGHT_THRESHOLD;
           const recommended = category.id === recommendedCategoryId;
@@ -152,9 +139,9 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
 
         {model.skills.map((skill) => {
           const position = positions[skill.id];
+          if (!position) return null;
           const active = selected.has(skill.id);
           const labelLines = skillLabelLines(t(skill.label));
-          const motion = motionBySkillId.get(skill.id);
           return (
             <g
               key={skill.id}
@@ -175,18 +162,6 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
                 }
               }}
             >
-              {motionEnabled && (
-                <animateTransform
-                  className="skill-dag-brownian-motion"
-                  attributeName="transform"
-                  type="translate"
-                  additive="sum"
-                  values={motion.values}
-                  dur={`${motion.duration}s`}
-                  begin={`${motion.delay}s`}
-                  repeatCount="indefinite"
-                />
-              )}
               <g className="skill-dag-skill-visual">
                 <circle className="skill-dag-skill-core" r="28" />
                 <text className="skill-dag-skill-label" textAnchor="middle">
@@ -281,6 +256,9 @@ export function SkillDagPanel({ graph, selectedSkillIds, onToggleSkill }) {
 
 function buildInitialLayout(model) {
   const positions = {};
+  const FALLBACK_CENTER = CLUSTER_CENTERS["backend"];
+
+  // Position category nodes
   model.categories.forEach((category, index) => {
     const secondRow = index >= 6;
     const rowIndex = secondRow ? index - 6 : index;
@@ -291,10 +269,13 @@ function buildInitialLayout(model) {
   });
 
   const spacing = 52;
+
+  // Position skills that belong to exactly one group (pure cluster skills)
   model.skillGroups.forEach((group) => {
     const center = CLUSTER_CENTERS[group.id];
+    if (!center) return;
     const skills = group.skills
-      .filter((skill) => model.skillMemberships.get(skill.id)?.length === 1)
+      .filter((skill) => (model.skillMemberships.get(skill.id)?.length || 0) === 1)
       .sort((a, b) => hashString(a.id) - hashString(b.id));
     const columns = Math.max(1, Math.ceil(Math.sqrt(skills.length)));
     const rows = Math.max(1, Math.ceil(skills.length / columns));
@@ -309,9 +290,9 @@ function buildInitialLayout(model) {
         y: center.y + (row - (rows - 1) / 2) * spacing + (random() - 0.5) * 8,
       };
     });
-
   });
 
+  // Position skills shared across multiple groups (boundary skills)
   const sharedSkillsByBoundary = new Map();
   for (const skill of model.skills) {
     const memberships = model.skillMemberships.get(skill.id) || [];
@@ -324,7 +305,11 @@ function buildInitialLayout(model) {
 
   for (const skills of sharedSkillsByBoundary.values()) {
     const memberships = model.skillMemberships.get(skills[0].id);
-    const centers = memberships.map((groupId) => CLUSTER_CENTERS[groupId]);
+    const centers = memberships
+      .map((groupId) => CLUSTER_CENTERS[groupId])
+      .filter(Boolean);
+    if (centers.length < 2) continue;
+
     const dx = centers[1].x - centers[0].x;
     const dy = centers[1].y - centers[0].y;
     const length = Math.hypot(dx, dy) || 1;
@@ -332,7 +317,7 @@ function buildInitialLayout(model) {
     let center;
     if (languageIndex >= 0) {
       const languageCenter = centers[languageIndex];
-      const otherCenters = centers.filter((_, index) => index !== languageIndex);
+      const otherCenters = centers.filter((_, idx) => idx !== languageIndex);
       const otherCenter = {
         x: otherCenters.reduce((total, point) => total + point.x, 0) / otherCenters.length,
         y: otherCenters.reduce((total, point) => total + point.y, 0) / otherCenters.length,
@@ -358,6 +343,18 @@ function buildInitialLayout(model) {
         y: center.y + (dx / length) * offset,
       };
     });
+  }
+
+  // Assign default positions to any remaining skills not yet positioned
+  let defaultOffset = 0;
+  for (const skill of model.skills) {
+    if (!positions[skill.id]) {
+      positions[skill.id] = {
+        x: FALLBACK_CENTER.x + (defaultOffset % 10) * 52,
+        y: FALLBACK_CENTER.y + Math.floor(defaultOffset / 10) * 52,
+      };
+      defaultOffset += 1;
+    }
   }
 
   return { positions };
@@ -387,23 +384,6 @@ function skillLabelLines(label) {
     }
   }
   return lines;
-}
-
-function buildBrownianMotion(skillId) {
-  const random = seededRandom(hashString(`${skillId}:motion`));
-  const values = ["0 0"];
-  for (let index = 0; index < 7; index += 1) {
-    const x = ((random() - 0.5) * 12).toFixed(1);
-    const y = ((random() - 0.5) * 12).toFixed(1);
-    values.push(`${x} ${y}`);
-  }
-  values.push("0 0");
-  const duration = 8 + random() * 5;
-  return {
-    values: values.join(";"),
-    duration: duration.toFixed(2),
-    delay: (-random() * duration).toFixed(2),
-  };
 }
 
 function hashString(value) {

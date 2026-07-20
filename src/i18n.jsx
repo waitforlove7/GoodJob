@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo } from "react";
+﻿import { createContext, useContext, useMemo } from "react";
 
 const EN = {
   "首页": "Home",
@@ -136,6 +136,71 @@ const EN = {
   "监控告警": "Monitoring & alerting",
   "自动化测试": "Test automation",
   "驱动开发": "Driver development",
+
+  "个人": "Profile",
+  "个人主页": "Profile",
+  "设定职业目标，跟踪技能进度，上传简历匹配岗位": "Set career goals, track skill progress, upload resume to match jobs",
+  "岗位目标": "Job Targets",
+  "目标岗位角色": "Target Roles",
+  "例如：后端工程师、AI Agent 工程师": "e.g. Backend Engineer, AI Agent Engineer",
+  "添加": "Add",
+  "目标公司": "Target Companies",
+  "例如：字节跳动、腾讯": "e.g. ByteDance, Tencent",
+  "移除": "Remove",
+  "技能进度": "Skill Progress",
+  "已掌握": "Mastered",
+  "全部技能": "All Skills",
+  "推荐职业路线": "Recommended Career Paths",
+  "简历解析": "Resume Analysis",
+  "点击或拖拽上传简历": "Click or drag to upload resume",
+  "上传简历": "Upload Resume",
+  "支持 .txt 格式，或将内容粘贴到下方文本框": "Supports .txt files; paste content below",
+  "或将简历文本粘贴到这里...": "Or paste resume text here...",
+  "提取关键词": "Extract Keywords",
+  "解析中...": "Analyzing...",
+  "提取的技能关键词": "Extracted Skill Keywords",
+  "岗位匹配": "Job Matches",
+  "暂未匹配到相关岗位，请尝试补充更多技能关键词。": "No matching jobs found. Try adding more skill keywords.",
+  "目前仅支持 .txt 格式的简历文件。请将简历内容粘贴到文本框。": "Only .txt files are supported. Please paste the content.",
+  "{n} 个招聘": "{n} posting(s)",
+
+
+  "个人主页": "Profile",
+  "设定职业目标，跟踪技能进度，上传简历匹配岗位": "Set career goals, track skill progress, upload resume to match jobs",
+  "岗位目标": "Job Targets",
+  "目标岗位角色": "Target Roles",
+  "例如：后端工程师、AI Agent 工程师": "e.g. Backend Engineer, AI Agent Engineer",
+  "添加": "Add",
+  "目标公司": "Target Companies",
+  "例如：字节跳动、腾讯": "e.g. ByteDance, Tencent",
+  "技能进度": "Skill Progress",
+  "已掌握": "Mastered",
+  "全部技能": "All Skills",
+  "推荐职业路线": "Recommended Career Paths",
+  "简历解析": "Resume Analysis",
+  "上传简历": "Upload Resume",
+  "支持 .txt 格式，或将内容粘贴到下方文本框": "Supports .txt files; paste text below",
+  "或将简历文本粘贴到这里...": "Or paste resume text here...",
+  "提取关键词": "Extract Keywords",
+  "解析中...": "Analyzing...",
+  "提取的技能关键词": "Extracted Skill Keywords",
+  "岗位匹配": "Job Matches",
+  "暂未匹配到相关岗位，请尝试补充更多技能关键词。": "No matching jobs found. Try adding more skill keywords.",
+  "目前仅支持 .txt 格式的简历文件。": "Only .txt files are supported.",
+  "关闭个人主页": "Close profile",
+
+  "\u6240\u9700\u6280\u80fd": "Required Skills",
+  "\u652f\u6301 .txt \u683c\u5f0f\uff0c\u6216\u7c98\u8d34\u5230\u4e0b\u65b9\u6587\u672c\u6846": "Supports .txt files; paste text below",
+  
+  "最多 5 个": "Max 5",
+  "搜索并添加目标岗位...": "Search and add target roles...",
+  "请从上方搜索并添加目标岗位": "Search and add target roles above",
+  "暂无技能数据": "No skill data available",
+  
+  "整体进度": "Overall Progress",
+  "已掌握技能": "Skills Mastered",
+  "profile_btn": "Profile",
+  "\u5c97\u4f4d\u76ee\u6807": "Job Targets",
 };
 
 const I18nContext = createContext({

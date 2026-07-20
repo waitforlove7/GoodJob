@@ -1,3 +1,7 @@
+﻿// ═══════════════ 简历解析后自动匹配岗位 — 改进版 ═══════════════
+// 新增：加权评分匹配、IDF 权重、中文模糊匹配、外部化技能规则
+import SKILL_RULES from "./data/skill_rules.json" with { type: "json" };
+
 export const CATEGORY_RULES = [
   {
     id: "frontend",
@@ -146,88 +150,6 @@ const JOB_CATEGORY_OVERRIDES = new Map([
   ["7582165348822550837", "testing"],
   ["7582165348083763509", "testing"],
 ]);
-
-export const SKILL_RULES = [
-  ["Python", ["Python"]],
-  ["Java", ["Java"]],
-  ["Go", ["Golang", "Go语言", "Go"]],
-  ["C/C++", ["C++", "CPP", "C语言", { term: "C", excludeSuffixes: ["端"] }]],
-  ["JS/TS", ["JavaScript", "TypeScript", "JS", "TS", "Node.js", "NodeJS", "Node"]],
-  ["iOS", ["iOS", "IOS"]],
-  ["Android", ["Android"]],
-  ["Flutter", ["Flutter"]],
-  ["Swift", ["Swift"]],
-  ["Rust", ["Rust"]],
-  ["React", [{ term: "React", caseSensitive: true }, { term: "react", caseSensitive: true }]],
-  ["ReAct", [{ term: "ReAct", caseSensitive: true }]],
-  ["Vue", ["Vue"]],
-  ["Svelte", ["Svelte"]],
-  ["Webpack/Vite", ["Webpack", "Vite"]],
-  ["HTML/CSS", ["HTML", "CSS"]],
-  ["Linux", ["Linux"]],
-  ["RTOS", ["RTOS"]],
-  ["Sensor", ["Sensor", "传感器"]],
-  ["驱动开发", ["驱动开发"]],
-  ["PCIe", ["PCIe", "PCIE"]],
-  ["RDMA", ["RDMA"]],
-  ["TCP/IP", ["TCP/IP", "TCP IP", "TCPIP"]],
-  ["BGP", ["BGP"]],
-  ["VXLAN", ["VXLAN", "VxLAN"]],
-  ["MySQL", ["MySQL", "Mysql"]],
-  ["Redis", ["Redis", "消息队列", "MQ"]],
-  ["NoSQL", ["NoSQL", "NOSQL", "nosql"]],
-  ["RocksDB", ["RocksDB", "Rocks DB"]],
-  ["Pika", ["Pika", "pika"]],
-  ["Ceph", ["Ceph"]],
-  ["Kafka", ["Kafka"]],
-  ["Spark", ["Spark"]],
-  ["Flink", ["Flink"]],
-  ["Hadoop", ["Hadoop"]],
-  ["Hive", ["Hive"]],
-  ["ClickHouse", ["ClickHouse"]],
-  ["Doris", ["Doris"]],
-  ["HBase", ["HBase"]],
-  ["Kubernetes", ["Kubernetes", "K8s"]],
-  ["Docker", ["Docker"]],
-  ["TensorFlow", ["TensorFlow"]],
-  ["PyTorch", ["PyTorch", "Pytorch"]],
-  ["Transformer", ["Transformer", "Transformers"]],
-  ["NLP", ["NLP", "自然语言处理"]],
-  ["CV", ["CV", "计算机视觉"]],
-  ["LLM", ["LLM", "大语言模型", "大模型"]],
-  ["AIGC", ["AIGC", "生成式"]],
-  ["Multi Agent", ["Multi Agent", "Multi-Agent", "多智能体", "多Agent"]],
-  ["Agent Infra", ["Agent Infra", "Agent Infrastructure", "Agent基础设施", "Agent 基础设施"]],
-  ["Tool Use", ["Tool Use", "Tool-Use", "工具使用", "工具调用"]],
-  ["Prompt Engineering", ["Prompt Engineering", "Prompt engineering", "提示词工程"]],
-  ["Fine-Tuning", ["Fine-Tuning", "Fine Tuning", "fine-tuning", "fine tuning", "微调"]],
-  ["LangGraph", ["LangGraph", "Lang Graph"]],
-  ["CrewAI", ["CrewAI", "Crew AI"]],
-  ["OpenClaw", ["OpenClaw", "Open Claw"]],
-  ["Agent", ["Agent", "智能体"]],
-  ["RAG", ["RAG", "检索增强"]],
-  ["SFT", ["SFT"]],
-  ["RL", ["RL", "强化学习", "Reinforcement Learning"]],
-  ["RLHF", ["RLHF"]],
-  ["SQL", ["SQL"]],
-  ["分布式系统", ["分布式系统", "分布式"]],
-  ["微服务", ["微服务"]],
-  ["RPC", ["RPC"]],
-  ["机器学习", ["机器学习", "ML"]],
-  ["深度学习", ["深度学习"]],
-  ["推荐系统", ["推荐系统", "推荐算法"]],
-  ["数据仓库", ["数据仓库", "数仓"]],
-  ["数据湖", ["数据湖", "湖仓"]],
-  ["自动化测试", ["自动化测试", "测试自动化"]],
-  ["性能优化", ["性能优化", "性能调优"]],
-  ["监控告警", ["监控", "告警", "可观测性"]],
-  ["IDA", ["IDA", "IDA Pro"]],
-  ["WinDBG", ["WinDBG", "WinDbg"]],
-  ["XPERF", ["XPERF", "xperf"]],
-  ["NVML", ["NVML", "Nvml", "nvml"]],
-  ["NVIDIA-SMI", ["NVIDIA-SMI", "NVIDIA-smi", "nvidia-smi"]],
-  ["CUDA-GDB", ["CUDA-GDB", "CUDA-gdb", "cuda-gdb"]],
-];
 
 const allCategories = [...CATEGORY_RULES, OTHER_CATEGORY];
 const SKILL_LEVEL_COLORS = ["#6ee7a8", "#d6e85f", "#ffb347", "#ff5f57"];
@@ -527,13 +449,13 @@ export function cleanJobTitle(title) {
   const separatorIndex = findDepartmentSeparator(normalized);
   if (separatorIndex < 0) return normalized.replaceAll("豆包", "").trim();
 
-  const suffix = normalized.slice(separatorIndex).replace(/^\s*[-－–—]\s*/, "").trim();
+  const suffix = normalized.slice(separatorIndex).replace(/^\s*[-－﹣—‒]\s*/, "").trim();
   if (!looksLikeDepartmentSuffix(suffix)) return normalized.replaceAll("豆包", "").trim();
   return normalized.slice(0, separatorIndex).replaceAll("豆包", "").trim();
 }
 
 function findDepartmentSeparator(title) {
-  const separators = title.matchAll(/[-－–—]/g);
+  const separators = title.matchAll(/[-－﹣—‒]/g);
   for (const match of separators) {
     const index = match.index;
     const before = title[index - 1] || "";
@@ -570,6 +492,96 @@ export function jobsMatchingAllSkills(graph, skillIds) {
   return (graph.jobsBySkill.get(firstSkillId) || []).filter((job) =>
     remainingSkillIds.every((skillId) => job.skillIds.includes(skillId)),
   );
+}
+
+// ═══════════════ 新增：加权评分匹配 ═══════════════
+
+/**
+ * 加权评分匹配 — 不要求岗位包含所有技能，按综合分排序。
+ * recall   = 命中技能数 / 简历技能总数（简历侧覆盖）
+ * coverage = 命中技能数 / 岗位技能总数（岗位侧精准度）
+ * score    = recall*0.60 + coverage*0.25 + log1p(招聘数)*0.02
+ * 默认阈值 0.20 过滤掉几乎不相关的岗位。
+ */
+export function scoreJobsBySkills(graph, skillIds, threshold = 0.20) {
+  if (!skillIds.length) return [];
+  const skillSet = new Set(skillIds);
+  const matches = [];
+
+  for (const job of graph.jobs) {
+    const matchedCount = job.skillIds.filter((sid) => skillSet.has(sid)).length;
+    if (matchedCount === 0) continue;
+    const recall = matchedCount / skillIds.length;
+    const coverage = job.skillIds.length > 0 ? matchedCount / job.skillIds.length : 0;
+    const score = recall * 0.60 + coverage * 0.25 + Math.log1p(job.postingCount) * 0.02;
+    if (score >= threshold) {
+      matches.push({ job, score, matchedCount, totalResumeSkills: skillIds.length, jobSkillCount: job.skillIds.length });
+    }
+  }
+
+  return matches.sort((a, b) => b.score - a.score);
+}
+
+// ═══════════════ 新增：IDF 加权评分匹配 ═══════════════
+
+/**
+ * IDF 加权评分 — 稀有技能命中权重更高，常见技能（如 Python）权重更低。
+ * 原理：技能越常见，idf 越低，避免"Python"主宰所有匹配结果。
+ */
+export function scoreJobsBySkillsWeighted(graph, skillIds, threshold = 0.20) {
+  if (!skillIds.length) return [];
+  const totalJobs = graph.jobs.length || 1;
+  const globalCounts = new Map(graph.globalSkillRanking.map((r) => [r.id, r.count]));
+
+  // 计算每个技能的 IDF 权重
+  const skillWeights = new Map();
+  for (const sid of skillIds) {
+    const globalCount = globalCounts.get(sid) || 1;
+    const idf = Math.log((totalJobs + 1) / (globalCount + 1)) + 0.5;
+    skillWeights.set(sid, Math.max(0.3, Math.min(idf, 2.5)));
+  }
+
+  const matches = [];
+  for (const job of graph.jobs) {
+    let weightedMatch = 0;
+    let totalWeight = 0;
+    for (const sid of skillIds) {
+      const w = skillWeights.get(sid) || 0.3;
+      totalWeight += w;
+      if (job.skillIds.includes(sid)) weightedMatch += w;
+    }
+    if (weightedMatch === 0) continue;
+    const score = weightedMatch / totalWeight;
+    if (score >= threshold) {
+      matches.push({ job, score, weightedMatch, totalWeight });
+    }
+  }
+
+  return matches.sort((a, b) => b.score - a.score);
+}
+
+/**
+ * 按类别限定的匹配 — 只在指定的岗位类别中搜索，适合"简历技术栈→目标类别岗位"场景。
+ */
+export function scoreJobsByCategory(graph, skillIds, categoryKey, threshold = 0.20) {
+  const category = graph.categories.find((c) => c.key === categoryKey);
+  if (!category) return [];
+  const categoryJobs = graph.jobsByCategory.get(category.id) || [];
+  const skillSet = new Set(skillIds);
+  const matches = [];
+
+  for (const job of categoryJobs) {
+    const matchedCount = job.skillIds.filter((sid) => skillSet.has(sid)).length;
+    if (matchedCount === 0) continue;
+    const recall = matchedCount / skillIds.length;
+    const coverage = job.skillIds.length > 0 ? matchedCount / job.skillIds.length : 0;
+    const score = recall * 0.60 + coverage * 0.25 + Math.log1p(job.postingCount) * 0.02;
+    if (score >= threshold) {
+      matches.push({ job, score, matchedCount, totalResumeSkills: skillIds.length });
+    }
+  }
+
+  return matches.sort((a, b) => b.score - a.score);
 }
 
 export function sortRelatedJobs(jobs, categoryKey) {
@@ -751,10 +763,25 @@ function countHits(text, terms) {
   return terms.reduce((total, term) => total + (aliasMatches(text, term) ? 1 : 0), 0);
 }
 
+// ═══════════════ 增强：中文模糊匹配 ═══════════════
+
+/**
+ * 中文文本规范化 — 去除标点、空白、常见干扰后缀（如"系统""平台""框架"），
+ * 让"分布式"可以匹配到"分布式系统"，"监控"匹配到"监控体系"。
+ */
+function normalizeChinese(text) {
+  return text
+    .replace(/[，,。！？、；：""''《》【】（）()\s]+/g, "")
+    .replace(/(系统|平台|框架|体系|引擎|工具|服务|端|方向)(?=[\u4e00-\u9fff]|$)/g, "")
+    .toLowerCase();
+}
+
 function aliasMatches(text, aliasConfig) {
   const alias = typeof aliasConfig === "string" ? aliasConfig : aliasConfig.term;
   const flags = typeof aliasConfig === "string" || !aliasConfig.caseSensitive ? "i" : "";
   if (!text || !alias) return false;
+
+  // ── 纯 ASCII 关键词走单词边界 regex ──
   if (/^[A-Za-z0-9.+#-]+$/.test(alias)) {
     const escaped = escapeRegExp(alias);
     const excludeSuffixes = typeof aliasConfig === "string" ? [] : aliasConfig.excludeSuffixes || [];
@@ -763,7 +790,15 @@ function aliasMatches(text, aliasConfig) {
       : "";
     return new RegExp(`(^|[^A-Za-z0-9.+#-])${escaped}${suffixGuard}([^A-Za-z0-9.+#-]|$)`, flags).test(text);
   }
-  return flags === "i" ? text.toLowerCase().includes(alias.toLowerCase()) : text.includes(alias);
+
+  // ── 中文关键词走模糊子串匹配 ──
+  const normalizedText = normalizeChinese(text);
+  const normalizedAlias = normalizeChinese(alias);
+
+  // 优先精确包含（最可靠）
+  if (flags === "i" ? text.toLowerCase().includes(alias.toLowerCase()) : text.includes(alias)) return true;
+  // 规范化后包含（处理"分布式"→"分布式系统"这类后缀差异）
+  return normalizedText.includes(normalizedAlias) || normalizedAlias.includes(normalizedText.slice(0, normalizedText.length));
 }
 
 function cleanText(value) {
@@ -781,3 +816,4 @@ function slugify(value) {
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+

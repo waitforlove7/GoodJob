@@ -9,7 +9,7 @@ const SKILL_GROUPS = [
   { id: "ai-model", label: "AI 模型与算法", color: "#cf67ff", skills: ["TensorFlow", "PyTorch", "Transformer", "NLP", "CV", "LLM", "Fine-Tuning", "SFT", "RL", "RLHF", "机器学习", "深度学习", "推荐系统", "Python"] },
   { id: "ai-agent", label: "AI Agent 应用", color: "#ff66c4", skills: ["AIGC", "Multi Agent", "Agent Infra", "Tool Use", "Prompt Engineering", "LangGraph", "CrewAI", "OpenClaw", "Agent", "RAG", "ReAct", "LLM"] },
   { id: "systems", label: "系统、网络与硬件", color: "#ffad5c", skills: ["Linux", "RTOS", "Sensor", "驱动开发", "PCIe", "RDMA", "TCP/IP", "BGP", "VXLAN", "IDA", "WinDBG", "XPERF", "NVML", "NVIDIA-SMI", "CUDA-GDB", "C/C++", "Rust"] },
-  { id: "quality", label: "测试与性能", color: "#ff6f78", skills: ["自动化测试", "性能优化"] },
+  { id: "quality", label: "测试与性能", color: "#ff6f78", skills: ["自动化测试", "性能优化", "JUnit"] },
 ];
 
 export function buildSkillDagModel(graph) {
