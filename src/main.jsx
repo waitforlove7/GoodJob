@@ -29,6 +29,7 @@ function App({ language, onLanguageChange }) {
   const [skillCategoryFilterId, setSkillCategoryFilterId] = useState(null);
   const [selectedSkillIds, setSelectedSkillIds] = useState([]);
   const [masteredSkillIds, setMasteredSkillIds] = useState([]);
+  const [selectedDagCategoryId, setSelectedDagCategoryId] = useState(null);
   const [relatedJobId, setRelatedJobId] = useState(null);
   const [selected, setSelected] = useState(null);
   const [showProfile, setShowProfile] = useState(
@@ -56,6 +57,7 @@ function App({ language, onLanguageChange }) {
       setSelected(null);
       setSelectedSkillIds([]);
       setMasteredSkillIds([]);
+      setSelectedDagCategoryId(null);
       setRelatedJobId(null);
       setSkillCategoryFilterId(null);
       setSkillViewMode("frequency");
@@ -68,6 +70,7 @@ function App({ language, onLanguageChange }) {
     setSelected(null);
     setSelectedSkillIds([]);
     setMasteredSkillIds([]);
+    setSelectedDagCategoryId(null);
     setRelatedJobId(null);
     setSkillCategoryFilterId(null);
     setSkillViewMode("frequency");
@@ -292,6 +295,8 @@ function App({ language, onLanguageChange }) {
                 graph={graph}
                 selectedSkillIds={masteredSkillIds}
                 onToggleSkill={handleToggleMasteredSkill}
+                selectedCategoryId={selectedDagCategoryId}
+                onSelectCategory={setSelectedDagCategoryId}
               />
             ) : (
               <JobGalaxy
@@ -317,6 +322,7 @@ function App({ language, onLanguageChange }) {
             graph={graph}
             selectedSkillIds={masteredSkillIds}
             onToggleSkill={handleToggleMasteredSkill}
+            selectedCategoryId={selectedDagCategoryId}
           />
         ) : (
           <InfoPanel
@@ -388,7 +394,7 @@ function LanguageToggle({ language, onChange }) {
         aria-pressed={language === "zh"}
         onClick={() => onChange("zh")}
       >
-        中文
+        {language === "en" ? "ZH" : "中文"}
       </button>
       <button
         type="button"
