@@ -8,17 +8,17 @@ import {
 } from "./skillDag.js";
 import { useI18n } from "./i18n.jsx";
 
-const VIEWBOX = { width: 1000, height: 1100 };
+const VIEWBOX = { width: 1000, height: 550 };
 const CLUSTER_CENTERS = {
-  "web-client": { x: 210, y: 450 },
-  backend: { x: 490, y: 450 },
-  data: { x: 770, y: 450 },
-  quality: { x: 210, y: 660 },
-  languages: { x: 490, y: 660 },
-  systems: { x: 770, y: 660 },
-  "ai-agent": { x: 210, y: 870 },
-  "ai-model": { x: 490, y: 870 },
-  cloud: { x: 770, y: 870 },
+  "web-client": { x: 150, y: 300 },
+  backend: { x: 400, y: 300 },
+  data: { x: 650, y: 300 },
+  quality: { x: 900, y: 300 },
+  languages: { x: 110, y: 470 },
+  systems: { x: 300, y: 470 },
+  "ai-agent": { x: 500, y: 470 },
+  "ai-model": { x: 700, y: 470 },
+  cloud: { x: 850, y: 470 },
 };
 
 export function SkillDag({ graph, selectedSkillIds, onToggleSkill, selectedCategoryId, onSelectCategory }) {
@@ -33,6 +33,7 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill, selectedCateg
   const matches = useMemo(() => evaluateSkillDag(model, selected), [model, selected]);
   const matchByCategoryId = new Map(matches.map((match) => [match.category.id, match]));
   const recommendedCategoryId = matches.find((match) => match.matchedCount > 0)?.category.id || null;
+
 
   const startDrag = (event, nodeId) => {
     const point = clientPointToSvg(event, svgRef.current);
@@ -81,17 +82,13 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill, selectedCateg
     <div className="skill-dag-shell">
       <div className="skill-dag-heading">
         <label className="skill-dag-search">
-          <span>{t("模糊查询技能")}</span>
           <input
             type="search"
             value={skillQuery}
-            placeholder={t("输入技能关键词")}
+            placeholder={t("输入技能关键词查询")}
             onChange={(event) => setSkillQuery(event.target.value)}
           />
         </label>
-        <span>{t("技能加点 DAG")}</span>
-        <strong>{selected.size > 0 ? t("已选择 {count} 项技能", { count: selected.size }) : t("点击技能圆点开始规划")}</strong>
-        <small>{t("拖动圆点可调整布局")}</small>
       </div>
       <svg
         ref={svgRef}
@@ -100,8 +97,7 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill, selectedCateg
         role="group"
         aria-label={t("可拖动的岗位大类与技能加点图")}
       >
-        <text className="skill-dag-layer-label" x="36" y="32">{t("岗位大类 · 点击查看技能要求")}</text>
-
+        
         {model.categories.map((category) => {
           const position = positions[category.id];
           if (!position) return null;
@@ -329,11 +325,11 @@ function buildInitialLayout(model) {
     const rowIndex = secondRow ? index - 6 : index;
     positions[category.id] = {
       x: (secondRow ? 170 : 90) + rowIndex * 164,
-      y: secondRow ? 250 : 124,
+      y: secondRow ? 140 : 10,
     };
   });
 
-  const spacing = 58;
+  const spacing = 52;
 
   // Position skills that belong to exactly one group (pure cluster skills)
   model.skillGroups.forEach((group) => {

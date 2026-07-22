@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import "echarts-wordcloud";
 import { useReducedMotion } from "framer-motion";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useI18n } from "./i18n.jsx";
 
 const CHART_TYPES = ["pie", "bar", "treemap", "wordcloud"];
@@ -36,8 +35,8 @@ function buildRows({
 }) {
   if (skillOverview) {
     const total = graph.globalSkillRanking.reduce((sum, item) => sum + item.count, 0) || 1;
-    const topSkills = graph.globalSkillRanking.slice(0, 15);
-    const otherCount = graph.globalSkillRanking.slice(15).reduce((sum, item) => sum + item.count, 0);
+    const topSkills = graph.globalSkillRanking;
+    const otherCount = 0;
     return [
       ...topSkills.map((item, index) => ({
         id: item.id,
@@ -59,7 +58,7 @@ function buildRows({
         percent: otherCount / total,
         selectable: false,
       },
-    ];
+    ].filter((item) => item.id !== "skill:other");
   }
 
   const total = filteredJobs
@@ -418,26 +417,27 @@ export const DistributionChart = React.memo(function DistributionChart({
     return () => cancelAnimationFrame(frame);
   }, [chartType]);
 
-  const goPrev = () => {
-    setChartTypeIndex((index) => (index - 1 + CHART_TYPES.length) % CHART_TYPES.length);
-  };
-
-  const goNext = () => {
-    setChartTypeIndex((index) => (index + 1) % CHART_TYPES.length);
-  };
-
   return (
     <div className="panel-section pie-section distribution-chart-section">
       <div className="distribution-chart-header">
-        <p className="panel-kicker">{title}</p>
-        <div className="distribution-chart-switch" role="group" aria-label={t("切换图表类型")}>
-          <button type="button" className="chart-nav-btn" onClick={goPrev} aria-label={t("上一张图表")}>
-            <ChevronLeft size={16} />
-          </button>
-          <span className="chart-type-label">{t(CHART_TYPE_LABELS[chartType])}</span>
-          <button type="button" className="chart-nav-btn" onClick={goNext} aria-label={t("下一张图表")}>
-            <ChevronRight size={16} />
-          </button>
+        <div
+          className="distribution-chart-pills"
+          role="group"
+          aria-label={t("切换图表类型")}
+          style={{ "--pill-active": chartTypeIndex }}
+        >
+          {CHART_TYPES.map((type, index) => (
+            <button
+              key={type}
+              type="button"
+              className={index === chartTypeIndex ? "is-active" : ""}
+              onClick={() => setChartTypeIndex(index)}
+              aria-label={t(CHART_TYPE_LABELS[type])}
+              aria-pressed={index === chartTypeIndex}
+            >
+              {t(CHART_TYPE_LABELS[type])}
+            </button>
+          ))}
         </div>
       </div>
       <div className="pie-layout">
@@ -447,18 +447,6 @@ export const DistributionChart = React.memo(function DistributionChart({
           role="img"
           aria-label={`${title} · ${t(CHART_TYPE_LABELS[chartType])}`}
         />
-      </div>
-      <div className="chart-type-dots" role="group" aria-label={t("切换图表类型")}>
-        {CHART_TYPES.map((type, index) => (
-          <button
-            key={type}
-            type="button"
-            className={index === chartTypeIndex ? "is-active" : ""}
-            onClick={() => setChartTypeIndex(index)}
-            aria-label={t(CHART_TYPE_LABELS[type])}
-            aria-pressed={index === chartTypeIndex}
-          />
-        ))}
       </div>
     </div>
   );

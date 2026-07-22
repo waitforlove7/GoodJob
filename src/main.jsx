@@ -4,7 +4,6 @@ import { Analytics, track } from "@vercel/analytics/react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { BrowserRouter, Link, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import {
-  Activity,
   ArrowRight,
   BriefcaseBusiness,
   Building2,
@@ -23,8 +22,6 @@ import { buildJobGraph, jobsMatchingAllSkills, searchJobs, sortRelatedJobs } fro
 import { JobGalaxy } from "./JobGalaxy.jsx";
 import { SkillDag, SkillDagPanel } from "./SkillDag.jsx";
 import { ProfilePage } from "./ProfilePage.jsx";
-import { CareerPanel, CareerPath } from "./CareerPath.jsx";
-import { CAREER_ROUTE_DEFINITIONS, evaluateCareerRoutes, resolveCareerRoutes } from "./careerRoutes.js";
 import { DistributionChart } from "./DistributionChart.jsx";
 import { loadProfile, saveProfile } from "./profileStore.js";
 import "./styles.css";
@@ -48,29 +45,18 @@ function App({ language, onLanguageChange }) {
   const [graph, setGraph] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [skillViewMode, setSkillViewMode] = useState("frequency");
-  const [skillCategoryFilterId, setSkillCategoryFilterId] = useState(null);
+  const [layerView, setLayerView] = useState("category");
   const [selectedSkillIds, setSelectedSkillIds] = useState([]);
   const [masteredSkillIds, setMasteredSkillIds] = useState([]);
-  const [selectedDagCategoryId, setSelectedDagCategoryId] = useState(null);
   const [relatedJobId, setRelatedJobId] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [careerMode, setCareerMode] = useState(
-    () => sessionStorage.getItem("goodjob_active_page") === "profile" ? "profile" : "route",
-  );
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeCareerId, setActiveCareerId] = useState("frontend");
   const [profileTargets, setProfileTargets] = useState(() => loadProfile().targets);
   const [profileMasteredSkillIds, setProfileMasteredSkillIds] = useState(
     () => loadProfile().profileMasteredSkillIds,
   );
   const graphCache = useRef(new Map());
-  const layerView = location.pathname === "/skills" ? "skill" : "category";
   const copy = useCallback((zh, en) => language === "en" ? en : zh, [language]);
-
-  useEffect(() => {
-    sessionStorage.setItem("goodjob_active_page", careerMode === "profile" ? "profile" : "main");
-  }, [careerMode]);
 
   useEffect(() => {
     const current = loadProfile();
@@ -88,10 +74,7 @@ function App({ language, onLanguageChange }) {
       setSelected(null);
       setSelectedSkillIds([]);
       setMasteredSkillIds([]);
-      setSelectedDagCategoryId(null);
       setRelatedJobId(null);
-      setSkillCategoryFilterId(null);
-      setSkillViewMode("frequency");
       return undefined;
     }
 
@@ -101,10 +84,7 @@ function App({ language, onLanguageChange }) {
     setSelected(null);
     setSelectedSkillIds([]);
     setMasteredSkillIds([]);
-    setSelectedDagCategoryId(null);
     setRelatedJobId(null);
-    setSkillCategoryFilterId(null);
-    setSkillViewMode("frequency");
 
     (async () => {
       try {
@@ -135,7 +115,6 @@ function App({ language, onLanguageChange }) {
 
   const handleSelect = useCallback((nextSelection) => {
     setRelatedJobId(null);
-    setSkillCategoryFilterId(null);
     if (!nextSelection) {
       setSelected(null);
       setSelectedSkillIds([]);
@@ -160,7 +139,6 @@ function App({ language, onLanguageChange }) {
       handleSelect(nextSelection);
       return;
     }
-    setSkillCategoryFilterId(null);
     const isSelected = selectedSkillIds.includes(nextSelection.id);
     const nextSkillIds = isSelected
       ? selectedSkillIds.filter((skillId) => skillId !== nextSelection.id)
@@ -186,8 +164,9 @@ function App({ language, onLanguageChange }) {
       return;
     }
     handleSelect(null);
-    navigate(nextView === "skill" ? "/skills" : "/galaxy");
-  }, [handleSelect, layerView, navigate]);
+    setLayerView(nextView);
+  }, [handleSelect, layerView]);
+
   const handleAddTarget = useCallback((target) => setProfileTargets((current) => [...current, target]), []);
   const handleRemoveTarget = useCallback((index) => setProfileTargets((current) => current.filter((_, i) => i !== index)), []);
   const handleToggleProfileSkill = useCallback((skillId) => {
@@ -201,81 +180,47 @@ function App({ language, onLanguageChange }) {
       : [...current, skillId]);
   }, []);
 
-  const careerRoutes = useMemo(() => {
-    if (!graph?.skills?.length) return [];
-    const availableSkills = new Set(graph.skills.map((skill) => skill.label));
-    const compatibleDefinitions = CAREER_ROUTE_DEFINITIONS.map((definition) => ({
-      ...definition,
-      requiredSkills: definition.requiredSkills.filter((label) => availableSkills.has(label)),
-      choiceGroups: definition.choiceGroups
-        .map((group) => ({ ...group, skills: group.skills.filter((label) => availableSkills.has(label)) }))
-        .filter((group) => group.skills.length >= group.min),
-      tiers: definition.tiers
-        .map((tier) => ({ ...tier, skills: tier.skills.filter((label) => availableSkills.has(label)) }))
-        .filter((tier) => tier.skills.length > 0),
-    })).filter((definition) => definition.requiredSkills.length > 0);
-    try { return resolveCareerRoutes(graph, compatibleDefinitions); }
-    catch (error) {
-      console.error("[GoodJob] Failed to resolve career routes:", error);
-      return [];
-    }
-  }, [graph]);
-  const careerProgress = useMemo(
-    () => evaluateCareerRoutes(careerRoutes, profileMasteredSkillIds),
-    [careerRoutes, profileMasteredSkillIds],
-  );
-  const activeCareer = careerRoutes.find((route) => route.id === activeCareerId) || careerRoutes[0];
-
-  const pageHeader = (chapter, title, { search = false, profile = true } = {}) => (
+    const pageHeader = (chapter, title, { search = false } = {}) => (
     <ExhibitionHeader
       chapter={chapter}
       title={title}
       language={language}
       onLanguageChange={onLanguageChange}
       onMenuOpen={() => setMenuOpen(true)}
-      onProfileOpen={profile ? () => {
-        setCareerMode("profile");
-        navigate("/career");
-      } : null}
     >
       {search ? <JobSearch graph={graph} onSelect={handleSelect} disabled={loading || !graph} /> : null}
     </ExhibitionHeader>
   );
 
-  const explorerPage = (view) => (
+  const explorerPage = () => (
     <main className="app-shell exhibition-app">
       {pageHeader(
-        view === "skill" ? copy("技能图谱", "Skill Atlas") : copy("岗位宇宙", "Job Galaxy"),
-        view === "skill" ? copy("构建你的能力星座", "Build your skill constellation") : copy("在真实招聘数据中定位职业坐标", "Locate a career coordinate in real hiring data"),
-        { search: view === "category" },
+        copy("岗位宇宙", "Job Galaxy"),
+        copy("在真实招聘数据中定位职业坐标", "Locate a career coordinate in real hiring data"),
+        { search: true },
       )}
       <section className={`workspace exhibition-workspace${loading ? " is-loading" : ""}`} id="main-content" aria-busy={loading}>
         <div className="visualization-column">
           <CompanyToolbar companyKey={companyKey} onChange={handleCompanyChange} disabled={loading} />
           <div className="scene-wrap exhibition-scene">
-            <ViewToggle activeView={view} onChange={handleLayerViewChange} />
-            {view === "skill" ? (
-              <SkillViewToggle activeView={skillViewMode} onChange={(mode) => {
-                setRelatedJobId(null);
-                setSkillViewMode(mode);
-              }} />
+          <div className="galaxy-toolbar">
+            <ViewToggle activeView={layerView} onChange={handleLayerViewChange} />
+            {graph ? (
+              <div className="galaxy-stats">
+                <strong>{graph.jobs.length}</strong><span> {t("岗位")}</span>
+                <span className="stats-sep">·</span>
+                <strong>{graph.skills.length}</strong><span> {t("技能")}</span>
+              </div>
             ) : null}
-            {!graph ? <DataLoadingState copy={copy} /> : view === "skill" && skillViewMode === "dag" ? (
-              <SkillDag
-                graph={graph}
-                selectedSkillIds={masteredSkillIds}
-                onToggleSkill={handleToggleMasteredSkill}
-                selectedCategoryId={selectedDagCategoryId}
-                onSelectCategory={setSelectedDagCategoryId}
-              />
-            ) : (
+          </div>
+            {!graph ? <DataLoadingState copy={copy} /> : (
               <JobGalaxy
                 graph={graph}
                 selected={galaxySelection}
                 selectedSkillIds={selectedSkillIds}
                 onSelect={handleSelect}
-                layerView={view}
-                skillCategoryFilterId={selectedNode?.type === "skill" ? skillCategoryFilterId : null}
+                layerView={layerView}
+                skillCategoryFilterId={null}
               />
             )}
             {loading && graph ? (
@@ -289,20 +234,17 @@ function App({ language, onLanguageChange }) {
         </div>
         {!graph ? (
           <aside className="info-panel"><DataLoadingState copy={copy} compact /></aside>
-        ) : view === "skill" && skillViewMode === "dag" ? (
-          <SkillDagPanel graph={graph} selectedSkillIds={masteredSkillIds} onToggleSkill={handleToggleMasteredSkill} selectedCategoryId={selectedDagCategoryId} />
         ) : (
           <InfoPanel
             graph={graph}
             selectedNode={selectedNode}
             selectedCategory={selectedCategory}
-            layerView={view}
-            skillCategoryFilterId={skillCategoryFilterId}
+            layerView={layerView}
+            skillCategoryFilterId={null}
             selectedSkillIds={selectedSkillIds}
             selectedRelatedJobId={relatedJobId}
             onSkillCategoryFilterChange={(categoryId) => {
               setRelatedJobId(null);
-              setSkillCategoryFilterId(categoryId);
             }}
             onCategorySelect={(categoryId) => handleSelect(categoryId ? { id: categoryId, type: "category" } : null)}
             onRelatedJobSelect={(jobId) => setRelatedJobId((current) => current === jobId ? null : jobId)}
@@ -327,30 +269,16 @@ function App({ language, onLanguageChange }) {
         >
           <Routes location={location}>
             <Route path="/" element={<HomePage graph={graph} loading={loading} language={language} onMenuOpen={() => setMenuOpen(true)} onLanguageChange={onLanguageChange} />} />
-            <Route path="/journey" element={<JourneyPage graph={graph} language={language} header={pageHeader(copy("数据旅程", "Data Journey"), copy("看见职业选择背后的关系", "See the relationships behind career choices"), { profile: false })} />} />
-            <Route path="/galaxy" element={explorerPage("category")} />
-            <Route path="/skills" element={explorerPage("skill")} />
+            <Route path="/galaxy" element={explorerPage()} />
+            <Route path="/skilldag" element={<SkillDagPage graph={graph} pageHeader={(c, t) => pageHeader(c, t)} copy={copy} masteredSkillIds={masteredSkillIds} onToggleSkill={handleToggleMasteredSkill} />} />
             <Route path="/career" element={
               <main className="app-shell exhibition-app career-page-shell">
-                {pageHeader(copy("职业路径", "Career Path"), copy("从现在的位置前往下一颗职业坐标", "Move from where you are to your next career coordinate"))}
-                <div className="career-mode-switch" role="tablist" aria-label={copy("职业页面模式", "Career page mode")}>
-                  <button type="button" role="tab" aria-selected={careerMode === "route"} onClick={() => setCareerMode("route")}><RouteIcon size={15} />{copy("成长航线", "Growth routes")}</button>
-                  <button type="button" role="tab" aria-selected={careerMode === "profile"} onClick={() => setCareerMode("profile")}><User size={15} />{copy("个人职业坐标", "Personal coordinate")}</button>
-                </div>
-                <section id="main-content" className={`career-workspace${careerMode === "profile" ? " is-profile" : ""}`}>
-                  {careerMode === "profile" ? (
-                    <ProfilePage graph={graph} profileTargets={profileTargets} profileMasteredSkillIds={profileMasteredSkillIds} onAddTarget={handleAddTarget} onRemoveTarget={handleRemoveTarget} onToggleProfileSkill={handleToggleProfileSkill} onClose={() => setCareerMode("route")} />
-                  ) : graph && activeCareer && careerProgress.size ? (
-                    <>
-                      <CareerPath routes={careerRoutes} progressById={careerProgress} masteredSkillIds={profileMasteredSkillIds} activeCareerId={activeCareer.id} onCareerChange={setActiveCareerId} onToggleSkill={handleToggleProfileSkill} />
-                      <CareerPanel graph={graph} route={activeCareer} progress={careerProgress.get(activeCareer.id)} masteredSkillIds={profileMasteredSkillIds} onToggleSkill={handleToggleProfileSkill} />
-                    </>
-                  ) : <DataLoadingState copy={copy} />}
+                {pageHeader(copy("个人主页", "Profile"), copy("设定职业目标，跟踪技能进度，上传简历匹配岗位", "Set career goals, track skill progress, upload resume to match jobs"))}
+                <section id="main-content" className="career-workspace is-profile">
+                  <ProfilePage graph={graph} profileTargets={profileTargets} profileMasteredSkillIds={profileMasteredSkillIds} onAddTarget={handleAddTarget} onRemoveTarget={handleRemoveTarget} onToggleProfileSkill={handleToggleProfileSkill} />
                 </section>
               </main>
             } />
-            <Route path="/about" element={<AboutPage graph={graph} language={language} header={pageHeader(copy("关于项目", "About"), copy("数据、方法与边界", "Data, methods, and boundaries"), { profile: false })} />} />
-            <Route path="*" element={<NavigateHome language={language} />} />
           </Routes>
         </motion.div>
       </AnimatePresence>
@@ -372,343 +300,16 @@ function createEmptyGraph() {
   };
 }
 
-function LegacyApp({ language, onLanguageChange }) {
-  const { t } = useI18n();
-  const [companyKey, setCompanyKey] = useState("all");
-  const [graph, setGraph] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [layerView, setLayerView] = useState("category");
-  const [skillViewMode, setSkillViewMode] = useState("frequency");
-  const [skillCategoryFilterId, setSkillCategoryFilterId] = useState(null);
-  const [selectedSkillIds, setSelectedSkillIds] = useState([]);
-  const [masteredSkillIds, setMasteredSkillIds] = useState([]);
-  const [selectedDagCategoryId, setSelectedDagCategoryId] = useState(null);
-  const [relatedJobId, setRelatedJobId] = useState(null);
-  const [selected, setSelected] = useState(null);
-  const [showProfile, setShowProfile] = useState(
-    () => sessionStorage.getItem("goodjob_active_page") === "profile",
-  );
-  const [profileTargets, setProfileTargets] = useState(() => loadProfile().targets);
-  const [profileMasteredSkillIds, setProfileMasteredSkillIds] = useState(
-    () => loadProfile().profileMasteredSkillIds,
-  );
-  const graphCache = useRef(new Map());
 
-  useEffect(() => {
-    sessionStorage.setItem("goodjob_active_page", showProfile ? "profile" : "main");
-  }, [showProfile]);
-
-  const handleCompanyChange = useCallback((nextCompanyKey) => {
-    setCompanyKey(nextCompanyKey);
-  }, []);
-
-  useEffect(() => {
-    const cacheKey = companyKey;
-    const cached = graphCache.current.get(cacheKey);
-    if (cached) {
-      setGraph(cached);
-      setSelected(null);
-      setSelectedSkillIds([]);
-      setMasteredSkillIds([]);
-      setSelectedDagCategoryId(null);
-      setRelatedJobId(null);
-      setSkillCategoryFilterId(null);
-      setSkillViewMode("frequency");
-      setLayerView("category");
-      return;
-    }
-
-    let cancelled = false;
-    setLoading(true);
-    setSelected(null);
-    setSelectedSkillIds([]);
-    setMasteredSkillIds([]);
-    setSelectedDagCategoryId(null);
-    setRelatedJobId(null);
-    setSkillCategoryFilterId(null);
-    setSkillViewMode("frequency");
-    setLayerView("category");
-    (async () => {
-      try {
-        let payload, overrides;
-        if (companyKey === "all") {
-          payload = await loadMergedData(COMPANY_KEYS);
-          overrides = buildMergedOverrides(COMPANY_KEYS);
-        } else {
-          payload = await loadCompanyData(companyKey);
-          overrides = buildMergedOverrides([companyKey]);
-        }
-        const g = buildJobGraph(payload, { source: payload.source, categoryOverrides: overrides });
-        if (!cancelled) {
-          graphCache.current.set(cacheKey, g);
-          setGraph(g);
-          setSelected(null);
-        }
-      } catch (err) {
-        console.error("[JobCloud] Failed to load company data:", err);
-        if (!cancelled) {
-          setGraph({
-            categories: [], jobs: [], skills: [], nodes: [], links: [],
-            nodeById: new Map(), jobsByCategory: new Map(), jobsBySkill: new Map(),
-            jobsBySkillAndCategory: new Map(), globalSkillRanking: [],
-            skillRankingByCategory: new Map(), skillTripleRankingByCategory: new Map(),
-            globalSkillVisuals: new Map(), skillVisualsByCategory: new Map(),
-            stats: { totalJobs: 0, completeJobs: 0, completeRate: 0 },
-          });
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [companyKey]);
-
-  const handleSelect = useCallback((nextSelection) => {
-    setRelatedJobId(null);
-    setSkillCategoryFilterId(null);
-    if (!nextSelection) {
-      setSelected(null);
-      setSelectedSkillIds([]);
-      return;
-    }
-    const node = graph?.nodeById?.get(nextSelection.id);
-    track("graph_node_selected", {
-      node_type: nextSelection.type,
-      node_label: node?.label || nextSelection.id,
-    });
-    const shouldClear =
-      (nextSelection.type === "category" || nextSelection.type === "skill") &&
-      selected?.type === nextSelection.type &&
-      selected.id === nextSelection.id;
-    setSelected(shouldClear ? null : nextSelection);
-    setSelectedSkillIds(!shouldClear && nextSelection.type === "skill" ? [nextSelection.id] : []);
-  }, [graph, selected]);
-
-  const handleSkillSelect = useCallback((nextSelection, { additive = false } = {}) => {
-    setRelatedJobId(null);
-    if (!additive) {
-      handleSelect(nextSelection);
-      return;
-    }
-
-    setSkillCategoryFilterId(null);
-    const isSelected = selectedSkillIds.includes(nextSelection.id);
-    const nextSkillIds = isSelected
-      ? selectedSkillIds.filter((skillId) => skillId !== nextSelection.id)
-      : [...selectedSkillIds, nextSelection.id];
-    setSelectedSkillIds(nextSkillIds);
-    if (nextSkillIds.length === 0) {
-      setSelected(null);
-    } else if (!isSelected || selected?.id === nextSelection.id) {
-      setSelected({ id: isSelected ? nextSkillIds.at(-1) : nextSelection.id, type: "skill" });
-    }
-  }, [handleSelect, selected, selectedSkillIds]);
-
-  const selectedNode = selected ? graph?.nodeById?.get(selected.id) : null;
-  const galaxySelection = relatedJobId ? { id: relatedJobId, type: "job" } : selected;
-  const selectedCategory =
-    selectedNode?.type === "category"
-      ? selectedNode
-      : selectedNode?.type === "job"
-        ? graph?.nodeById?.get(selectedNode.categoryId)
-        : null;
-  const handleLayerViewChange = useCallback((nextView) => {
-    if (nextView === layerView) {
-      if (nextView === "skill") handleSelect(null);
-      return;
-    }
-    setLayerView(nextView);
-    handleSelect(null);
-  }, [handleSelect, layerView]);
-
-  const handleAddTarget = useCallback((target) => { setProfileTargets(prev => [...prev, target]); }, []);
-  const handleRemoveTarget = useCallback((idx) => { setProfileTargets(prev => prev.filter((_, i) => i !== idx)); }, []);
-  const handleToggleProfileSkill = useCallback((skillId) => { setProfileMasteredSkillIds(prev => prev.includes(skillId) ? prev.filter(id => id !== skillId) : [...prev, skillId]); }, []);
-
-  const handleToggleMasteredSkill = useCallback((skillId) => {
-    setMasteredSkillIds((current) =>
-      current.includes(skillId) ? current.filter((id) => id !== skillId) : [...current, skillId],
-    );
-  }, []);
-  const handleSkillCategoryFilterChange = useCallback((categoryId) => {
-    setRelatedJobId(null);
-    setSkillCategoryFilterId(categoryId);
-  }, []);
-  const handleSkillViewModeChange = useCallback((nextMode) => {
-    setRelatedJobId(null);
-    setSkillViewMode(nextMode);
-  }, []);
-
-  if (!graph) {
-    return (
-      <main className="app-shell">
-        <header className="site-header">
-          <a className="brand" href="#top" aria-label={`GoodJob ${t("首页")}`}>
-            <span className="brand-mark"><Sparkles size={16} /></span>
-            <strong>GoodJob</strong>
-            <small>Web Mining Group1</small>
-          </a>
-          <JobSearch disabled />
-          <div className="header-actions">
-            <button className="profile-header-btn" onClick={() => setShowProfile(true)} aria-label={t("profile_btn")}><User size={16} /></button>
-            <LanguageToggle language={language} onChange={onLanguageChange} />
-          </div>
-        </header>
-        {showProfile ? (
-          <div className="profile-shell">
-            <ProfilePage
-              graph={null}
-              profileTargets={profileTargets}
-              profileMasteredSkillIds={profileMasteredSkillIds}
-              onAddTarget={handleAddTarget}
-              onRemoveTarget={handleRemoveTarget}
-              onToggleProfileSkill={handleToggleProfileSkill}
-              onClose={() => setShowProfile(false)}
-            />
-          </div>
-        ) : (
-          <section className="workspace" id="explore">
-            <div className="visualization-column">
-              <CompanyToolbar
-                companyKey={companyKey}
-                onChange={handleCompanyChange}
-                disabled
-              />
-              <div className="scene-wrap">
-                <div className="loading-spinner" />
-              </div>
-            </div>
-            <aside className="info-panel">
-              <div className="panel-section">
-                <p className="panel-kicker">{t("加载数据")}</p>
-                <h2>{t("正在加载岗位数据...")}</h2>
-                <p className="muted">{t("请稍候，正在获取公司招聘信息。")}</p>
-              </div>
-            </aside>
-          </section>
-        )}
-      </main>
-    );
-  }
-
-  return (
-    <main className="app-shell">
-      <header className="site-header">
-        <a className="brand" href="#top" aria-label={`GoodJob ${t("首页")}`}>
-          <span className="brand-mark"><Sparkles size={16} /></span>
-          <strong>GoodJob</strong>
-          <small>Web Mining Group1</small>
-        </a>
-        <JobSearch graph={graph} onSelect={handleSelect} disabled={loading} />
-        <div className="header-actions">
-            <button className="profile-header-btn" onClick={() => setShowProfile(true)} aria-label={t("profile_btn")}><User size={16} /></button>
-            <LanguageToggle language={language} onChange={onLanguageChange} />
-          </div>
-      </header>
-        {showProfile ? (
-          <div className="profile-shell">
-            <ProfilePage
-            graph={graph}
-            profileTargets={profileTargets}
-            profileMasteredSkillIds={profileMasteredSkillIds}
-            onAddTarget={handleAddTarget}
-            onRemoveTarget={handleRemoveTarget}
-            onToggleProfileSkill={handleToggleProfileSkill}
-            onClose={() => setShowProfile(false)}
-            />
-          </div>
-        ) : (
-        <>
-        <section className="hero-panel" id="top">
-        <div className="title-block">
-          <h1>{t("看见岗位之间的")}<br /><em>{t("隐形连接")}</em></h1>
-          <p>
-            {t("把分散的职位描述变成一张可探索的技能星图。快速比较岗位大类、技能热度与职业方向，找到下一步最值得投入的能力。")}
-          </p>
-        </div>
-        <div className="metric-grid" aria-label={t("数据概览")}>
-          <Metric icon={<BriefcaseBusiness />} label={t("招聘发布")} value={graph.stats.totalJobs} />
-          <Metric icon={<Building2 />} label={t("岗位角色")} value={graph.stats.roleCount ?? graph.jobs.length} />
-          <Metric icon={<Layers3 />} label={t("大类")} value={graph.categories.length} />
-          <Metric icon={<Activity />} label={t("技能")} value={graph.skills.length} />
-          <Metric icon={<Search />} label={t("描述完整度")} value={`${graph.stats.completeRate}%`} />
-        </div>
-      </section>
-
-      <section className={`workspace${loading ? " is-loading" : ""}`} id="explore" aria-busy={loading}>
-        <div className="visualization-column">
-          <CompanyToolbar companyKey={companyKey} onChange={handleCompanyChange} disabled={loading} />
-          <div className="scene-wrap">
-            <ViewToggle activeView={layerView} onChange={handleLayerViewChange} />
-            {layerView === "skill" && (
-              <SkillViewToggle activeView={skillViewMode} onChange={handleSkillViewModeChange} />
-            )}
-            {layerView === "skill" && skillViewMode === "dag" ? (
-              <SkillDag
-                graph={graph}
-                selectedSkillIds={masteredSkillIds}
-                onToggleSkill={handleToggleMasteredSkill}
-                selectedCategoryId={selectedDagCategoryId}
-                onSelectCategory={setSelectedDagCategoryId}
-              />
-            ) : (
-              <JobGalaxy
-                graph={graph}
-                selected={galaxySelection}
-                selectedSkillIds={selectedSkillIds}
-                onSelect={handleSelect}
-                layerView={layerView}
-                skillCategoryFilterId={selectedNode?.type === "skill" ? skillCategoryFilterId : null}
-              />
-            )}
-            {loading ? (
-              <div className="scene-loading-overlay" role="status" aria-live="polite">
-                <div className="loading-spinner" />
-                <strong>{t("正在切换数据源...")}</strong>
-                <span>{t("当前布局保持不变，新图谱准备完成后将自动更新。")}</span>
-              </div>
-            ) : null}
-          </div>
-        </div>
-        {layerView === "skill" && skillViewMode === "dag" ? (
-          <SkillDagPanel
-            graph={graph}
-            selectedSkillIds={masteredSkillIds}
-            onToggleSkill={handleToggleMasteredSkill}
-            selectedCategoryId={selectedDagCategoryId}
-          />
-        ) : (
-          <InfoPanel
-            graph={graph}
-            selectedNode={selectedNode}
-            selectedCategory={selectedCategory}
-            layerView={layerView}
-            skillCategoryFilterId={skillCategoryFilterId}
-            selectedSkillIds={selectedSkillIds}
-            selectedRelatedJobId={relatedJobId}
-            onSkillCategoryFilterChange={handleSkillCategoryFilterChange}
-            onCategorySelect={(categoryId) => handleSelect(categoryId ? { id: categoryId, type: "category" } : null)}
-            onRelatedJobSelect={(jobId) => setRelatedJobId((current) => (current === jobId ? null : jobId))}
-            onSkillSelect={handleSkillSelect}
-          />
-        )}
-      </section>
-        </>
-        )}
-    </main>
-  );
-}
 
 const CHAPTERS = [
   { path: "/", zh: "首页", en: "Home", icon: Home },
-  { path: "/journey", zh: "数据旅程", en: "Data Journey", icon: Compass },
   { path: "/galaxy", zh: "岗位宇宙", en: "Job Galaxy", icon: Sparkles },
-  { path: "/skills", zh: "技能图谱", en: "Skill Atlas", icon: Network },
+  { path: "/skilldag", zh: "技能加点", en: "Skill DAG", icon: Layers3 },
   { path: "/career", zh: "职业路径", en: "Career Path", icon: RouteIcon },
-  { path: "/about", zh: "关于项目", en: "About", icon: Activity },
 ];
 
-function ExhibitionHeader({ chapter, title, language, onLanguageChange, onMenuOpen, onProfileOpen, children }) {
+function ExhibitionHeader({ chapter, title, language, onLanguageChange, onMenuOpen, children }) {
   return (
     <header className="exhibition-header">
       <Link className="exhibition-brand" to="/" aria-label={language === "en" ? "GoodJob home" : "GoodJob 首页"}>
@@ -721,11 +322,6 @@ function ExhibitionHeader({ chapter, title, language, onLanguageChange, onMenuOp
       </div>
       {children}
       <div className="exhibition-actions">
-        {onProfileOpen ? (
-          <button type="button" className="glass-icon-button" onClick={onProfileOpen} aria-label={language === "en" ? "Open personal career coordinate" : "打开个人职业坐标"}>
-            <User size={17} />
-          </button>
-        ) : null}
         <LanguageToggle language={language} onChange={onLanguageChange} />
         <button type="button" className="glass-icon-button menu-trigger" onClick={onMenuOpen} aria-label={language === "en" ? "Open chapter menu" : "打开章节菜单"}>
           <Menu size={18} />
@@ -822,21 +418,19 @@ function DataLoadingState({ copy, compact = false }) {
   );
 }
 
-function NavigateHome({ language }) {
-  return (
-    <main className="not-found-page" id="main-content">
-      <strong>404</strong>
-      <h1>{language === "en" ? "This coordinate does not exist." : "这颗坐标不存在。"}</h1>
-      <Link className="primary-entry" to="/">{language === "en" ? "Return home" : "返回首页"}</Link>
-    </main>
-  );
-}
+
 
 function HomePage({ graph, loading, language, onMenuOpen, onLanguageChange }) {
-  const labels = (graph?.jobs || []).slice(0, 9).map((job) => job.label);
   const copy = (zh, en) => language === "en" ? en : zh;
+  const labels = (graph?.jobs || []).slice(0, 9).map((job) => job.label);
+  const topSkills = graph?.globalSkillRanking?.slice(0, 8) || [];
+  const floatingJobs = (graph?.jobs || []).slice(0, 18);
+  const companyCount = COMPANY_KEYS.length;
+  const roleCount = graph?.stats?.roleCount ?? graph?.jobs?.length ?? 0;
+  const skillCount = graph?.skills?.length ?? 0;
   return (
     <main className="home-cover" id="main-content">
+      <div className="home-hero">
       <div className="star-dust" aria-hidden="true" />
       <div className="home-topbar">
         <Link className="home-brand" to="/"><strong>GoodJob</strong><span>CAREER DATA EXPLORATION</span></Link>
@@ -855,119 +449,60 @@ function HomePage({ graph, loading, language, onMenuOpen, onLanguageChange }) {
         <div className="home-intro">{copy("从真实招聘数据出发，探索岗位、技能与职业路径之间的关系。", "Explore the relationships among jobs, skills, and career paths through real hiring data.")}</div>
         <div className="home-cta-row">
           <Link className="primary-entry" to="/galaxy">{copy("进入岗位宇宙", "Enter the job galaxy")}<ArrowRight size={17} /></Link>
-          <Link className="secondary-entry" to="/journey">{copy("了解这片宇宙", "Understand this universe")}</Link>
         </div>
       </section>
       <div className="home-data-status" role="status" aria-live="polite">
         <span>{loading ? copy("真实数据正在形成星图", "Real data is forming the galaxy") : copy("真实招聘数据已就绪", "Real hiring data ready")}</span>
         {graph ? <strong>{graph.stats.roleCount ?? graph.jobs.length} {copy("个岗位坐标", "job coordinates")}</strong> : null}
       </div>
-    </main>
-  );
-}
-
-function JourneyPage({ graph, language, header }) {
-  const copy = (zh, en) => language === "en" ? en : zh;
-  const topSkills = graph?.globalSkillRanking?.slice(0, 8) || [];
-  const floatingJobs = (graph?.jobs || []).slice(0, 18);
-  const companyCount = COMPANY_KEYS.length;
-  const roleCount = graph?.stats?.roleCount ?? graph?.jobs?.length ?? 0;
-  const skillCount = graph?.skills?.length ?? 0;
-  return (
-    <main className="story-page">
-      {header}
-      <div id="main-content" className="journey-track">
-        <section className="journey-chapter chapter-confusion">
-          <div className="floating-roles" aria-hidden="true">
-            {floatingJobs.map((job, index) => (
-              <span
-                key={job.id}
-                style={{
-                  "--role-top": `${4 + Math.floor(index / 2) * 10.8}%`,
-                  "--role-static-left": `${index % 2 === 0 ? 0 : 52}%`,
-                  "--role-shift-y": `${(Math.floor(index / 2) % 3 - 1) * 3}px`,
-                  "--role-opacity": 0.24 + (index % 4) * 0.085,
-                  "--role-size": `${12 + (index % 3) * 2}px`,
-                  "--role-blur": `${index % 5 === 0 ? 0.35 : 0}px`,
-                  "--role-duration": `${16 + (Math.floor(index / 2) % 4) * 2}s`,
-                  "--role-delay": `${-((index % 2) * (8 + (Math.floor(index / 2) % 4)) + Math.floor(index / 2) * 0.65)}s`,
-                }}
-              >
-                {job.label}
-              </span>
-            ))}
-          </div>
-          <div className="journey-copy">
-            <span>{copy("职业选择为何令人迷茫", "Why career choices feel unclear")}</span>
-            <h2>{copy("招聘网站给了我们无数岗位，却很少解释它们之间的关系。", "Job boards show countless roles, but rarely explain how those roles connect.")}</h2>
-          </div>
-        </section>
-        <section className="journey-chapter chapter-relations">
-          <div className="relationship-diagram" role="img" aria-label={copy(`数据关系：${companyCount} 家公司、${roleCount} 个岗位、${skillCount} 项技能`, `Data relationship: ${companyCount} companies, ${roleCount} jobs, and ${skillCount} skills`)}>
-            <div><Building2 aria-hidden="true" /><strong>{companyCount}</strong><span>{copy("公司", "Companies")}</span></div>
-            <i aria-hidden="true" /><div><BriefcaseBusiness aria-hidden="true" /><strong>{roleCount}</strong><span>{copy("岗位", "Jobs")}</span></div>
-            <i aria-hidden="true" /><div><Network aria-hidden="true" /><strong>{skillCount}</strong><span>{copy("技能", "Skills")}</span></div>
-          </div>
-          <div className="journey-copy">
-            <span>{copy("岗位并不是孤立存在", "Jobs do not exist in isolation")}</span>
-            <h2>{copy("每一个岗位，都是技能、行业与组织需求共同形成的坐标。", "Every role is a coordinate formed by skills, industries, and organizational needs.")}</h2>
-          </div>
-        </section>
-        <section className="journey-chapter chapter-path">
-          <div className="skill-ribbon" aria-label={copy("真实高频技能预览", "Preview of real high-frequency skills")}>
-            {topSkills.map((skill) => <span key={skill.id}><b>{skill.label}</b><small>{skill.count}</small></span>)}
-          </div>
-          <div className="journey-copy">
-            <span>{copy("从市场需求找到成长路径", "Turn market demand into a growth path")}</span>
-            <h2>{copy("观察真实需求，补齐关键技能，再选择最接近你的职业方向。", "Read real demand, fill critical skill gaps, then choose the career direction closest to you.")}</h2>
-            <Link className="primary-entry" to="/galaxy">{copy("进入岗位宇宙", "Enter the job galaxy")}<ArrowRight size={17} /></Link>
-          </div>
-        </section>
       </div>
+
+      <section className="journey-chapter chapter-confusion">
+        <div className="floating-roles" aria-hidden="true">
+          {floatingJobs.map((job, index) => (
+            <span key={job.id} style={{
+              "--role-top": `${4 + Math.floor(index / 2) * 10.8}%`,
+              "--role-static-left": `${index % 2 === 0 ? 0 : 52}%`,
+              "--role-shift-y": `${(Math.floor(index / 2) % 3 - 1) * 3}px`,
+              "--role-opacity": 0.24 + (index % 4) * 0.085,
+              "--role-size": `${12 + (index % 3) * 2}px`,
+              "--role-blur": `${index % 5 === 0 ? 0.35 : 0}px`,
+              "--role-duration": `${16 + (Math.floor(index / 2) % 4) * 2}s`,
+              "--role-delay": `${-((index % 2) * (8 + (Math.floor(index / 2) % 4)) + Math.floor(index / 2) * 0.65)}s`,
+            }}>{job.label}</span>
+          ))}
+        </div>
+        <div className="journey-copy">
+          <span>{copy("职业选择为何令人迷茫", "Why career choices feel unclear")}</span>
+          <h2>{copy("招聘网站给了我们无数岗位，却很少解释它们之间的关系。", "Job boards show countless roles, but rarely explain how those roles connect.")}</h2>
+        </div>
+      </section>
+      <section className="journey-chapter chapter-relations">
+        <div className="relationship-diagram" role="img" aria-label={copy("数据关系：" + companyCount + " 家公司、" + roleCount + " 个岗位、" + skillCount + " 项技能", "Data relationship: " + companyCount + " companies, " + roleCount + " jobs, and " + skillCount + " skills")}>
+          <div><Building2 aria-hidden="true" /><strong>{companyCount}</strong><span>{copy("公司", "Companies")}</span></div>
+          <i aria-hidden="true" /><div><BriefcaseBusiness aria-hidden="true" /><strong>{roleCount}</strong><span>{copy("岗位", "Jobs")}</span></div>
+          <i aria-hidden="true" /><div><Network aria-hidden="true" /><strong>{skillCount}</strong><span>{copy("技能", "Skills")}</span></div>
+        </div>
+        <div className="journey-copy">
+          <span>{copy("岗位并不是孤立存在", "Jobs do not exist in isolation")}</span>
+          <h2>{copy("每一个岗位，都是技能、行业与组织需求共同形成的坐标。", "Every role is a coordinate formed by skills, industries, and organizational needs.")}</h2>
+        </div>
+      </section>
+      <section className="journey-chapter chapter-path">
+        <div className="skill-ribbon" aria-label={copy("真实高频技能预览", "Preview of real high-frequency skills")}>
+          {topSkills.map((skill) => <span key={skill.id}><b>{skill.label}</b><small>{skill.count}</small></span>)}
+        </div>
+        <div className="journey-copy">
+          <span>{copy("从市场需求找到成长路径", "Turn market demand into a growth path")}</span>
+          <h2>{copy("观察真实需求，补齐关键技能，再选择最接近你的职业方向。", "Read real demand, fill critical skill gaps, then choose the career direction closest to you.")}</h2>
+          <Link className="primary-entry" to="/galaxy">{copy("进入岗位宇宙", "Enter the job galaxy")}<ArrowRight size={17} /></Link>
+        </div>
+      </section>
     </main>
   );
 }
 
-function AboutPage({ graph, language, header }) {
-  const copy = (zh, en) => language === "en" ? en : zh;
-  return (
-    <main className="about-page">
-      {header}
-      <article id="main-content" className="about-ledger">
-        <header>
-          <p>{copy("理解数据从哪里来，也理解它不能回答什么。", "Understand where the data comes from and what it cannot answer.")}</p>
-          <h1>{copy("一座建立在真实招聘信息之上的职业数据展览。", "A career data exhibition built on real hiring information.")}</h1>
-        </header>
-        <section className="about-sources">
-          <h2>{copy("数据来源", "Data sources")}</h2>
-          <div>{COMPANY_KEYS.map((key) => <span key={key}>{language === "en" ? COMPANY_CONFIGS[key].SOURCE : COMPANY_CONFIGS[key].LABEL}</span>)}</div>
-          <p>{copy("页面只呈现项目已采集和适配的数据，不补造岗位、技能或统计结论。", "The site only presents collected and adapted project data. It does not invent roles, skills, or findings.")}</p>
-        </section>
-        <section className="about-method">
-          <h2>{copy("方法", "Method")}</h2>
-          <ol>
-            <li><strong>{copy("采集与适配", "Collect and adapt")}</strong><span>{copy("不同公司数据经独立 adapter 归一为同一岗位结构。", "Company-specific adapters normalize data into one job structure.")}</span></li>
-            <li><strong>{copy("关系构建", "Build relationships")}</strong><span>{copy("岗位分类、技能词典和真实共现关系形成岗位图谱。", "Job classification, the skill dictionary, and real co-occurrence form the graph.")}</span></li>
-            <li><strong>{copy("行动映射", "Map to action")}</strong><span>{copy("技能 DAG、职业路线和简历匹配将市场信号转化为可操作线索。", "The skill DAG, career routes, and resume matching turn market signals into actionable clues.")}</span></li>
-          </ol>
-        </section>
-        <section className="about-tech">
-          <h2>{copy("技术与规模", "Technology and scope")}</h2>
-          <p>React / Vite / Three.js / Recharts / ECharts / React Router / Framer Motion</p>
-          {graph ? <div className="about-numbers"><span><b>{graph.stats.totalJobs}</b>{copy("招聘发布", "postings")}</span><span><b>{graph.stats.roleCount ?? graph.jobs.length}</b>{copy("岗位角色", "roles")}</span><span><b>{graph.skills.length}</b>{copy("技能", "skills")}</span></div> : null}
-        </section>
-        <section className="about-limits">
-          <h2>{copy("边界与声明", "Limits and disclaimer")}</h2>
-          <p>{copy("招聘数据只反映已采集公司与时间范围内的公开需求，不等同于完整市场，也不构成职业、录用或薪资承诺。", "Hiring data reflects only the collected companies and time range. It is not the complete market and does not promise career, hiring, or salary outcomes.")}</p>
-        </section>
-        <section className="about-team">
-          <h2>{copy("团队", "Team")}</h2>
-          <p>{copy("团队成员与分工：待项目方补充。", "Team members and responsibilities: to be provided by the project team.")}</p>
-        </section>
-      </article>
-    </main>
-  );
-}
+
 
 function CompanyToolbar({ companyKey, onChange, disabled = false }) {
   const { t } = useI18n();
@@ -1017,7 +552,7 @@ function LanguageToggle({ language, onChange }) {
         aria-pressed={language === "zh"}
         onClick={() => onChange("zh")}
       >
-        {language === "en" ? "ZH" : "中文"}
+        中文
       </button>
       <button
         type="button"
@@ -1145,6 +680,10 @@ function JobSearch({ graph = null, onSelect, disabled = false }) {
   );
 }
 
+
+
+
+
 function ViewToggle({ activeView, onChange }) {
   const { t } = useI18n();
   return (
@@ -1161,19 +700,32 @@ function ViewToggle({ activeView, onChange }) {
   );
 }
 
-function SkillViewToggle({ activeView, onChange }) {
+function SkillDagPage({ graph, pageHeader, copy, masteredSkillIds, onToggleSkill }) {
   const { t } = useI18n();
+  const [selectedDagCategoryId, setSelectedDagCategoryId] = useState(null);
+
   return (
-    <div className="skill-view-toggle" role="group" aria-label={t("技能视图模式")}>
-      {[
-        ["frequency", t("频次分布")],
-        ["dag", t("加点 DAG")],
-      ].map(([id, label]) => (
-        <button key={id} type="button" aria-pressed={activeView === id} onClick={() => onChange(id)}>
-          {label}
-        </button>
-      ))}
-    </div>
+    <main className="app-shell exhibition-app">
+      {pageHeader(copy("技能加点", "Skill DAG"), copy("规划技能学习路径", "Plan your skill learning path"))}
+      <section id="main-content" className="workspace exhibition-workspace">
+        <div className="visualization-column" style={{ gridTemplateRows: "minmax(0, 1fr)" }}>
+          <div className="scene-wrap exhibition-scene" style={{ overflow: "visible", height: "100%" }}>
+            {graph ? (
+              <SkillDag
+                graph={graph}
+                selectedSkillIds={masteredSkillIds}
+                onToggleSkill={onToggleSkill}
+                selectedCategoryId={selectedDagCategoryId}
+                onSelectCategory={setSelectedDagCategoryId}
+              />
+            ) : <DataLoadingState copy={copy} />}
+          </div>
+        </div>
+        {graph ? (
+          <SkillDagPanel graph={graph} selectedSkillIds={masteredSkillIds} onToggleSkill={onToggleSkill} selectedCategoryId={selectedDagCategoryId} />
+        ) : <aside className="info-panel"><DataLoadingState copy={copy} compact /></aside>}
+      </section>
+    </main>
   );
 }
 
@@ -1214,6 +766,9 @@ function InfoPanel({
         <div className="panel-section">
           <p className="panel-kicker">{t("默认视图")}</p>
           <h2>{t("所有大类技能频次")}</h2>
+          <p className="muted">
+            {t("共 {jobs} 个岗位角色，{skills} 项技能。", { jobs: graph.jobs.length, skills: graph.skills.length })}
+          </p>
           <p className="muted">
             {t("当前为全链接状态，展示全部大类下技能提及次数的汇总排序。点击大类或职位可以进入局部关系视图。")}
           </p>

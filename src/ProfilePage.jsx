@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "./i18n.jsx";
 import { extractSkills, jobsMatchingAllSkills, scoreJobsBySkills, searchJobs } from "./jobGraph.js";
 import { loadProfile, saveProfile } from "./profileStore.js";
-import { BriefcaseBusiness, Building2, Sparkles, Upload, FileText, Search, X, CheckCircle, Target, BookOpen, TrendingUp, Zap } from "lucide-react";
+import { BriefcaseBusiness, Building2, Sparkles, Upload, FileText, Search, CheckCircle, Target, BookOpen, TrendingUp, Zap } from "lucide-react";
 
 const TARGET_SEARCH_PAGE_SIZE = 8;
 
-export function ProfilePage({ graph, profileTargets, profileMasteredSkillIds, onAddTarget, onRemoveTarget, onToggleProfileSkill, onClose }) {
+export function ProfilePage({ graph, profileTargets, profileMasteredSkillIds, onAddTarget, onRemoveTarget, onToggleProfileSkill }) {
   const { t } = useI18n();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -167,7 +167,6 @@ export function ProfilePage({ graph, profileTargets, profileMasteredSkillIds, on
           <h1>{t("个人主页")}</h1>
           <p className="muted">{t("设定职业目标，跟踪技能进度，上传简历匹配岗位")}</p>
         </div>
-        <button className="profile-close-btn" onClick={onClose} aria-label={t("关闭个人主页")}><X size={20} /></button>
       </div>
 
       <div className="profile-main">

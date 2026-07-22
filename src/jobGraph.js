@@ -194,7 +194,8 @@ export function buildJobGraph(payload, { source = "unknown", categoryOverrides =
       || classifyJob(title, `${description}\n${requirement}`);
     const category = categoryByKey.get(categoryKey) || categoryByKey.get("other");
     const skillLabels = new Set(
-      Array.isArray(item?.skill_labels) ? item.skill_labels : extractSkills(text),
+      (Array.isArray(item?.skill_labels) ? item.skill_labels : extractSkills(text))
+        .filter((label) => !["Tool Use", "Tool-Use"].includes(label)),
     );
     if (category.key === "frontend") {
       skillLabels.add("JS/TS");
@@ -482,7 +483,7 @@ export function extractSkills(text) {
       found.add(label);
     }
   }
-  return [...found];
+  return [...found].filter((label) => !["Tool Use", "Tool-Use"].includes(label));
 }
 
 export function jobsMatchingAllSkills(graph, skillIds) {

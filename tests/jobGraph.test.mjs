@@ -223,7 +223,7 @@ test("extracts specific agent and AIGC skills independently", () => {
   assert.ok(skills.includes("AIGC"));
   assert.ok(skills.includes("Multi Agent"));
   assert.ok(skills.includes("Agent Infra"));
-  assert.ok(skills.includes("Tool Use"));
+  assert.equal(skills.includes("Tool Use"), false);
   assert.ok(skills.includes("Agent"));
 });
 
