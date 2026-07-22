@@ -2,7 +2,46 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import jobsPayload from "./fixtures/example.json" with { type: "json" };
 import { buildJobGraph } from "../src/jobGraph.js";
-import { buildSkillDagModel, evaluateSkillDag, suggestedSkillRowsForCategory } from "../src/skillDag.js";
+import {
+  CATEGORY_CONSTELLATIONS,
+  CATEGORY_PROGRESS_WORDS,
+  buildSkillDagModel,
+  evaluateSkillDag,
+  progressWordParts,
+  skillMatchesQuery,
+  suggestedSkillRowsForCategory,
+} from "../src/skillDag.js";
+
+test("defines a valid abstract constellation for every DAG category", () => {
+  assert.equal(Object.keys(CATEGORY_CONSTELLATIONS).length, 11);
+
+  Object.values(CATEGORY_CONSTELLATIONS).forEach((constellation) => {
+    assert.equal(constellation.points.length, 9);
+    assert.ok(constellation.links.length >= 8);
+    constellation.links.forEach(([from, to]) => {
+      assert.ok(from >= 0 && from < constellation.points.length);
+      assert.ok(to >= 0 && to < constellation.points.length);
+      assert.notEqual(from, to);
+    });
+  });
+});
+
+test("defines progressive words and reveals Front in three stages", () => {
+  assert.equal(Object.keys(CATEGORY_PROGRESS_WORDS).length, 11);
+  assert.deepEqual(progressWordParts("Front", 0, 3), { lit: "", dim: "Front" });
+  assert.deepEqual(progressWordParts("Front", 1, 3), { lit: "Fr", dim: "ont" });
+  assert.deepEqual(progressWordParts("Front", 2, 3), { lit: "Fron", dim: "t" });
+  assert.deepEqual(progressWordParts("Front", 3, 3), { lit: "Front", dim: "" });
+});
+
+test("fuzzy skill matching supports substrings, separators, typos, and reset", () => {
+  assert.equal(skillMatchesQuery("Python", "pyth"), true);
+  assert.equal(skillMatchesQuery("Python", "pythn"), true);
+  assert.equal(skillMatchesQuery("JS/TS", "jsts"), true);
+  assert.equal(skillMatchesQuery("机器学习", "机器"), true);
+  assert.equal(skillMatchesQuery("Python", "java"), false);
+  assert.equal(skillMatchesQuery("Python", ""), false);
+});
 
 test("builds a DAG with every skill and without product or other endpoints", () => {
   const graph = buildJobGraph(jobsPayload);
@@ -24,6 +63,45 @@ test("groups skills for DAG and handles uncovered skills", () => {
   assert.ok(clusteredSkillIds.length > graph.skills.length);
   assert.deepEqual(model.skillMemberships.get(python.id), ["languages", "ai-model"]);
   assert.deepEqual(model.skillGroups.slice(0, 2).map((group) => group.label), ["基础语言", "Web 与客户端"]);
+});
+
+test("binds each category's high-frequency skills to progressive constellation stars", () => {
+  const graph = buildJobGraph(jobsPayload);
+  const model = buildSkillDagModel(graph);
+
+  model.categories.forEach((category) => {
+    const expectedSkillIds = [...new Set(
+      category.combinations.flatMap((combination) => combination.skills.map((skill) => skill.id)),
+    )];
+    const starSkillIds = category.constellation.stars
+      .map((star) => star.skillId)
+      .filter(Boolean);
+
+    assert.deepEqual(starSkillIds, expectedSkillIds);
+    assert.equal(category.constellation.links.length >= 8, true);
+  });
+});
+
+test("one selected shared skill progresses every related constellation", () => {
+  const graph = buildJobGraph(jobsPayload);
+  const model = buildSkillDagModel(graph);
+  const categoriesBySkill = new Map();
+
+  model.edges.forEach((edge) => {
+    const categoryIds = categoriesBySkill.get(edge.skillId) || [];
+    categoryIds.push(edge.categoryId);
+    categoriesBySkill.set(edge.skillId, categoryIds);
+  });
+
+  const shared = [...categoriesBySkill.entries()].find(([, categoryIds]) => categoryIds.length > 1);
+  assert.ok(shared, "fixture should contain a skill shared by multiple categories");
+
+  const [skillId, expectedCategoryIds] = shared;
+  const progressedCategoryIds = evaluateSkillDag(model, [skillId])
+    .filter((match) => match.matchedCount > 0)
+    .map((match) => match.category.id);
+
+  expectedCategoryIds.forEach((categoryId) => assert.ok(progressedCategoryIds.includes(categoryId)));
 });
 
 test("ranks only categories matched by selected skills", () => {

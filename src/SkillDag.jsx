@@ -1,9 +1,14 @@
 ﻿import { useMemo, useRef, useState } from "react";
-import { buildSkillDagModel, evaluateSkillDag, suggestedSkillRowsForCategory } from "./skillDag.js";
+import {
+  buildSkillDagModel,
+  evaluateSkillDag,
+  progressWordParts,
+  skillMatchesQuery,
+  suggestedSkillRowsForCategory,
+} from "./skillDag.js";
 import { useI18n } from "./i18n.jsx";
 
 const VIEWBOX = { width: 1000, height: 1100 };
-const CATEGORY_HIGHLIGHT_THRESHOLD = 2;
 const CLUSTER_CENTERS = {
   "web-client": { x: 210, y: 450 },
   backend: { x: 490, y: 450 },
@@ -16,17 +21,18 @@ const CLUSTER_CENTERS = {
   cloud: { x: 770, y: 870 },
 };
 
-export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
+export function SkillDag({ graph, selectedSkillIds, onToggleSkill, selectedCategoryId, onSelectCategory }) {
   const { t } = useI18n();
   const model = useMemo(() => buildSkillDagModel(graph), [graph]);
   const initialLayout = useMemo(() => buildInitialLayout(model), [model]);
   const [positions, setPositions] = useState(initialLayout.positions);
+  const [skillQuery, setSkillQuery] = useState("");
   const svgRef = useRef(null);
   const dragRef = useRef(null);
   const selected = useMemo(() => new Set(selectedSkillIds), [selectedSkillIds]);
   const matches = useMemo(() => evaluateSkillDag(model, selected), [model, selected]);
   const matchByCategoryId = new Map(matches.map((match) => [match.category.id, match]));
-  const recommendedCategoryId = matches.find((match) => match.matchedCount >= CATEGORY_HIGHLIGHT_THRESHOLD)?.category.id || null;
+  const recommendedCategoryId = matches.find((match) => match.matchedCount > 0)?.category.id || null;
 
   const startDrag = (event, nodeId) => {
     const point = clientPointToSvg(event, svgRef.current);
@@ -59,19 +65,30 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
     }));
   };
 
-  const finishDrag = (event, skillId) => {
+  const finishDrag = (event, { skillId = null, categoryId = null } = {}) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     dragRef.current = null;
-    if (!drag.moved && skillId) onToggleSkill(skillId);
+    if (drag.moved) return;
+    if (skillId) onToggleSkill(skillId);
+    if (categoryId) onSelectCategory?.(categoryId);
   };
 
   return (
     <div className="skill-dag-shell">
       <div className="skill-dag-heading">
+        <label className="skill-dag-search">
+          <span>{t("模糊查询技能")}</span>
+          <input
+            type="search"
+            value={skillQuery}
+            placeholder={t("输入技能关键词")}
+            onChange={(event) => setSkillQuery(event.target.value)}
+          />
+        </label>
         <span>{t("技能加点 DAG")}</span>
         <strong>{selected.size > 0 ? t("已选择 {count} 项技能", { count: selected.size }) : t("点击技能圆点开始规划")}</strong>
         <small>{t("拖动圆点可调整布局")}</small>
@@ -81,55 +98,60 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
         className="skill-dag-map"
         viewBox={`0 0 ${VIEWBOX.width} ${VIEWBOX.height}`}
         role="group"
-        aria-label={t("技能到岗位大类的可拖动有向无环图")}
+        aria-label={t("可拖动的岗位大类与技能加点图")}
       >
-        <defs>
-          <marker id="skill-dag-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" />
-          </marker>
-        </defs>
-        <text className="skill-dag-layer-label" x="36" y="32">{t("岗位大类 · DAG 终点")}</text>
-
-        <g className="skill-dag-edges" aria-hidden="true">
-          {model.edges.map((edge) => {
-            const from = positions[edge.skillId];
-            const to = positions[edge.categoryId];
-            const match = matchByCategoryId.get(edge.categoryId);
-            const active = selected.has(edge.skillId);
-            if (!from || !to || (match?.matchedCount || 0) < CATEGORY_HIGHLIGHT_THRESHOLD) return null;
-            return (
-              <path
-                key={edge.id}
-                d={edgePath(from, to)}
-                className={active ? "is-active" : ""}
-                markerEnd={active ? "url(#skill-dag-arrow)" : undefined}
-              />
-            );
-          })}
-        </g>
+        <text className="skill-dag-layer-label" x="36" y="32">{t("岗位大类 · 点击查看技能要求")}</text>
 
         {model.categories.map((category) => {
           const position = positions[category.id];
           if (!position) return null;
           const match = matchByCategoryId.get(category.id);
-          const highlighted = (match?.matchedCount || 0) >= CATEGORY_HIGHLIGHT_THRESHOLD;
+          const highlighted = (match?.matchedCount || 0) > 0;
           const recommended = category.id === recommendedCategoryId;
+          const categorySelected = category.id === selectedCategoryId;
+          const progressWord = category.progressWord || category.label;
+          const wordParts = progressWordParts(
+            progressWord,
+            match?.matchedCount || 0,
+            match?.total || 3,
+            match?.unlocked,
+          );
           return (
             <g
               key={category.id}
-              className={`skill-dag-category${highlighted ? " is-matched" : ""}${recommended ? " is-recommended" : ""}${match?.unlocked ? " is-unlocked" : ""}`}
+              className={`skill-dag-category${highlighted ? " is-matched" : ""}${recommended ? " is-recommended" : ""}${match?.unlocked ? " is-unlocked" : ""}${categorySelected ? " is-selected" : ""}`}
               transform={`translate(${position.x} ${position.y})`}
+              role="button"
+              tabIndex="0"
+              aria-pressed={categorySelected}
               aria-label={`${t(category.label)}, ${t("匹配 {matched}/{total}", { matched: match?.matchedCount || 0, total: match?.total || 3 })}`}
               onPointerDown={(event) => startDrag(event, category.id)}
               onPointerMove={moveDrag}
-              onPointerUp={(event) => finishDrag(event)}
+              onPointerUp={(event) => finishDrag(event, { categoryId: category.id })}
               onPointerCancel={(event) => finishDrag(event)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelectCategory?.(category.id);
+                }
+              }}
             >
-              <g className="skill-dag-category-visual">
-                <circle className="skill-dag-category-halo" r="42" />
-                <circle className="skill-dag-category-core" r="40" style={{ "--category-color": category.color }} />
-                <text className="skill-dag-category-label" textAnchor="middle" y="-3">{t(category.label)}</text>
-                <text className="skill-dag-category-score" textAnchor="middle" y="16">
+              <g className="skill-dag-category-visual" style={{ "--category-color": category.color }}>
+                <rect className="skill-dag-category-halo" x="-72" y="-56" width="144" height="114" rx="16" />
+                <rect
+                  className="skill-dag-category-core"
+                  x="-69"
+                  y="-53"
+                  width="138"
+                  height="108"
+                  rx="14"
+                />
+                <text className="skill-dag-progress-word" textAnchor="middle" y="-2">
+                  <tspan className="is-lit">{wordParts.lit}</tspan>
+                  <tspan>{wordParts.dim}</tspan>
+                </text>
+                <text className="skill-dag-category-label" textAnchor="middle" y="26">{t(category.label)}</text>
+                <text className="skill-dag-category-score" textAnchor="middle" y="42">
                   {match?.unlocked ? t("已点亮") : `${match?.matchedCount || 0}/${match?.total || 3}`}
                 </text>
               </g>
@@ -141,11 +163,13 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
           const position = positions[skill.id];
           if (!position) return null;
           const active = selected.has(skill.id);
+          const searchActive = Boolean(skillQuery.trim());
+          const searchMatch = searchActive && skillMatchesQuery(skill.label, skillQuery);
           const labelLines = skillLabelLines(t(skill.label));
           return (
             <g
               key={skill.id}
-              className={`skill-dag-skill${active ? " is-selected" : ""}`}
+              className={`skill-dag-skill${active ? " is-selected" : ""}${searchMatch ? " is-search-match" : ""}${searchActive && !searchMatch ? " is-search-dimmed" : ""}`}
               transform={`translate(${position.x} ${position.y})`}
               role="button"
               tabIndex="0"
@@ -153,7 +177,7 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
               aria-label={`${t(skill.label)}, ${active ? t("已选择") : t("未选择")}`}
               onPointerDown={(event) => startDrag(event, skill.id)}
               onPointerMove={moveDrag}
-              onPointerUp={(event) => finishDrag(event, skill.id)}
+              onPointerUp={(event) => finishDrag(event, { skillId: skill.id })}
               onPointerCancel={(event) => finishDrag(event)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
@@ -180,19 +204,56 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill }) {
   );
 }
 
-export function SkillDagPanel({ graph, selectedSkillIds, onToggleSkill }) {
+export function SkillDagPanel({ graph, selectedSkillIds, onToggleSkill, selectedCategoryId }) {
   const { t } = useI18n();
   const model = useMemo(() => buildSkillDagModel(graph), [graph]);
   const matches = useMemo(() => evaluateSkillDag(model, selectedSkillIds), [model, selectedSkillIds]);
+  const selected = useMemo(() => new Set(selectedSkillIds), [selectedSkillIds]);
   const selectedSkills = selectedSkillIds.map((skillId) => graph.nodeById.get(skillId)).filter(Boolean);
   const recommendations = matches.filter((match) => match.matchedCount > 0).slice(0, 3);
+  const selectedCategoryMatch = matches.find((match) => match.category.id === selectedCategoryId) || null;
+  const requiredSkills = selectedCategoryMatch?.best?.skills || [];
+  const litRequiredSkills = requiredSkills.filter((skill) => selected.has(skill.id));
 
   return (
     <aside className="info-panel skill-dag-panel">
       <div className="panel-section">
         <p className="panel-kicker">{t("技能加点")}</p>
         <h2>{selectedSkills.length > 0 ? t("{count} 项技能已选择", { count: selectedSkills.length }) : t("规划职业方向")}</h2>
-        <p className="muted">{t("点击技能进行多选；系统按每个大类的高频三技能组合计算最接近的方向。")}</p>
+        <p className="muted">{t("点击上方岗位大类查看技能要求；点击下方技能进行加点。")}</p>
+      </div>
+
+      <div className="panel-section">
+        <h3>{t("大类技能要求")}</h3>
+        {selectedCategoryMatch ? (
+          <div
+            className="skill-dag-category-detail"
+            style={{ "--category-color": selectedCategoryMatch.category.color }}
+          >
+            <div className="skill-dag-category-detail-heading">
+              <strong>{t(selectedCategoryMatch.category.label)}</strong>
+              <em>{selectedCategoryMatch.matchedCount}/{selectedCategoryMatch.total}</em>
+            </div>
+            <small>{t("当前高频技能组合")}</small>
+            <div className="skill-dag-required-skills">
+              {requiredSkills.map((skill) => (
+                <span key={skill.id} className={selected.has(skill.id) ? "is-lit" : ""}>
+                  {t(skill.label)}
+                </span>
+              ))}
+            </div>
+            <small>{t("目前已点亮的技能")}</small>
+            {litRequiredSkills.length > 0 ? (
+              <div className="skill-dag-lit-skills">
+                {litRequiredSkills.map((skill) => <span key={skill.id}>{t(skill.label)}</span>)}
+              </div>
+            ) : (
+              <p className="muted">{t("该组合暂未点亮任何技能。")}</p>
+            )}
+          </div>
+        ) : (
+          <p className="muted">{t("点击上方任意岗位大类，即可查看所需技能与当前进度。")}</p>
+        )}
       </div>
 
       <div className="panel-section">
@@ -235,8 +296,12 @@ export function SkillDagPanel({ graph, selectedSkillIds, onToggleSkill }) {
                         {suggestedSkills.map((skill, skillIndex) => (
                           <li key={skill.id} className={skill.isLanguageGroup ? "is-language-group" : ""}>
                             <span>{skillIndex + 1}</span>
-                            <strong>{t(skill.label)}</strong>
-                            <em>{skill.countLabel}</em>
+                            <strong>
+                              {skill.isLanguageGroup
+                                ? t("编程语言：{skills}", { skills: skill.languageLabels.map((label) => t(label)).join(" / ") })
+                                : t(skill.label)}
+                            </strong>
+                            <em>{skill.isLanguageGroup ? t("{count} 门", { count: skill.languageCount }) : skill.countLabel}</em>
                           </li>
                         ))}
                       </ol>
@@ -264,7 +329,7 @@ function buildInitialLayout(model) {
     const rowIndex = secondRow ? index - 6 : index;
     positions[category.id] = {
       x: (secondRow ? 170 : 90) + rowIndex * 164,
-      y: secondRow ? 202 : 104,
+      y: secondRow ? 250 : 124,
     };
   });
 
@@ -371,13 +436,6 @@ function clientPointToSvg(event, svg) {
     x: ((event.clientX - rect.left) / rect.width) * VIEWBOX.width,
     y: ((event.clientY - rect.top) / rect.height) * VIEWBOX.height,
   };
-}
-
-function edgePath(from, to) {
-  const startY = from.y - 27;
-  const endY = to.y + 41;
-  const controlY = (startY + endY) / 2;
-  return `M ${from.x} ${startY} C ${from.x} ${controlY}, ${to.x} ${controlY}, ${to.x} ${endY}`;
 }
 
 function skillLabelLines(label) {
