@@ -1,10 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import "echarts-wordcloud";
+import { useReducedMotion } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useI18n } from "./i18n.jsx";
 
 const CHART_TYPES = ["pie", "bar", "treemap", "wordcloud"];
+
+const DATA_PALETTE = [
+  "#39c6bc", "#4ea8de", "#8b7fe8", "#e58b52", "#5cbf82",
+  "#e3b341", "#5e8fd6", "#c56b9a", "#46b6c4", "#ec755f",
+  "#8ccf54", "#7b9ce1", "#d39a5b", "#3fc49d", "#a889e6",
+];
+
+const WORD_PALETTE = [
+  "#62eee0", "#68bff2", "#a89af3", "#f0a06c", "#77d79d",
+  "#f1c95d", "#7da6ef", "#e184b2", "#67d0db", "#f08c78",
+];
+
+function dataColor(index) {
+  return DATA_PALETTE[index % DATA_PALETTE.length];
+}
 
 function formatPercent(value) {
   return `${(value * 100).toFixed(value >= 0.1 ? 1 : 2)}%`;
@@ -27,7 +43,7 @@ function buildRows({
         id: item.id,
         label: t(item.label),
         name: t(item.label),
-        color: `hsl(${(index * 47 + 165) % 360} 68% 62%)`,
+        color: dataColor(index),
         count: item.count,
         value: item.count,
         percent: item.count / total,
@@ -54,7 +70,7 @@ function buildRows({
   const jobsByCategory = skill ? graph.jobsBySkillAndCategory.get(skill.id) : graph.jobsByCategory;
 
   return graph.categories
-    .map((category) => {
+    .map((category, index) => {
       const count = filteredJobs
         ? filteredJobs.filter((job) => job.categoryId === category.id).length
         : jobsByCategory?.get(category.id)?.length || 0;
@@ -62,7 +78,7 @@ function buildRows({
         id: category.id,
         label: t(category.label),
         name: t(category.label),
-        color: category.color,
+        color: dataColor(index),
         count,
         value: count,
         percent: count / total,
@@ -76,29 +92,31 @@ function buildRows({
 function buildTooltipFormatter(mode, t) {
   return (params) => {
     const data = params?.data || params;
-    const color = data.color || params?.color || "#008000";
+    const color = data.color || params?.color || "#62d9ce";
     const count = data.count ?? data.value ?? 0;
     const percent = data.percent ?? 0;
     const countLabel = mode === "skill-overview"
       ? t("{count} 次提及", { count })
       : `${t("{count} 个岗位", { count })}${mode === "skill" ? t("提及") : ""}`;
     const name = data.name || data.label || "";
-    return `<div style="border-left:3px solid ${color};padding-left:8px;margin:-2px 0">
-      <strong style="color:${color}">${name}</strong><br/>
-      <span style="color:${color};opacity:0.92">${countLabel} · ${formatPercent(percent)}</span>
+    return `<div style="border-left:3px solid ${color};padding-left:9px;margin:-2px 0">
+      <strong style="color:#e8ece8">${name}</strong><br/>
+      <span style="color:#a9bcba">${countLabel} · ${formatPercent(percent)}</span>
     </div>`;
   };
 }
 
 function buildChartOption({ chartType, rows, mode, activeId, selectedSkillIds, t }) {
-  const textColor = "#008000";
-  const mutedColor = "#5a9a5a";
+  const textColor = "#dce9e7";
+  const mutedColor = "#7f9898";
+  const chartBackground = "#07151d";
   const tooltip = {
     trigger: "item",
-    backgroundColor: "rgba(255,255,255,0.96)",
+    backgroundColor: "rgba(5,13,19,0.96)",
     borderWidth: 1,
-    borderColor: "rgba(46,139,87,0.25)",
+    borderColor: "rgba(98,217,206,0.32)",
     textStyle: { color: textColor },
+    extraCssText: "box-shadow:0 18px 42px rgba(0,0,0,.34);border-radius:8px;",
     formatter: buildTooltipFormatter(mode, t),
   };
 
@@ -116,12 +134,13 @@ function buildChartOption({ chartType, rows, mode, activeId, selectedSkillIds, t
           avoidLabelOverlap: true,
           itemStyle: {
             borderRadius: 4,
-            borderColor: "#fff",
-            borderWidth: 2,
+            borderColor: "rgba(218, 255, 250, 0.32)",
+            borderWidth: 1,
           },
           label: {
-            formatter: "{b}\n{d}%",
-            fontSize: 11,
+            formatter: (params) => `${params.name}\n${formatPercent(params.data.percent)}`,
+            fontSize: 12,
+            fontWeight: 600,
           },
           labelLine: {
             length: 12,
@@ -130,6 +149,7 @@ function buildChartOption({ chartType, rows, mode, activeId, selectedSkillIds, t
           data: rows.map((row) => ({
             ...row,
             name: row.label,
+            value: row.value,
             label: {
               color: row.color,
             },
@@ -142,9 +162,9 @@ function buildChartOption({ chartType, rows, mode, activeId, selectedSkillIds, t
                 ? selectedSet.size === 0 || selectedSet.has(row.id) ? 1 : 0.35
                 : activeId && activeId !== row.id ? 0.4 : 1,
               borderColor: (mode === "skill-overview" ? selectedSet.has(row.id) : activeId === row.id)
-                ? "#008000"
-                : "#fff",
-              borderWidth: (mode === "skill-overview" ? selectedSet.has(row.id) : activeId === row.id) ? 3 : 2,
+                ? "#8aeee5"
+                : "rgba(218, 255, 250, 0.32)",
+              borderWidth: (mode === "skill-overview" ? selectedSet.has(row.id) : activeId === row.id) ? 2 : 1,
             },
           })),
         },
@@ -160,7 +180,7 @@ function buildChartOption({ chartType, rows, mode, activeId, selectedSkillIds, t
       xAxis: {
         type: "value",
         axisLabel: { color: mutedColor, fontSize: 10 },
-        splitLine: { lineStyle: { color: "rgba(46,139,87,0.12)" } },
+        splitLine: { lineStyle: { color: "rgba(98,217,206,0.1)" } },
         axisLine: { show: false },
         axisTick: { show: false },
       },
@@ -173,7 +193,7 @@ function buildChartOption({ chartType, rows, mode, activeId, selectedSkillIds, t
           width: 88,
           overflow: "truncate",
         },
-        axisLine: { lineStyle: { color: "rgba(46,139,87,0.2)" } },
+        axisLine: { lineStyle: { color: "rgba(98,217,206,0.2)" } },
         axisTick: { show: false },
       },
       series: [
@@ -221,24 +241,27 @@ function buildChartOption({ chartType, rows, mode, activeId, selectedSkillIds, t
           label: {
             show: true,
             formatter: "{b}",
-            fontSize: 12,
-            fontWeight: 700,
+            fontFamily: '"Segoe UI Variable Text", "Microsoft YaHei UI", "PingFang SC", sans-serif',
+            fontSize: 13,
+            fontWeight: 500,
+            lineHeight: 18,
           },
           upperLabel: { show: false },
           itemStyle: {
-            borderColor: "#fff",
-            borderWidth: 2,
-            gapWidth: 2,
+            borderColor: "rgba(218, 255, 250, 0.28)",
+            borderWidth: 1,
+            gapWidth: 1,
           },
           data: rows.map((row) => ({
             ...row,
             name: row.label,
             value: row.value,
             label: {
-              color: row.color,
-              backgroundColor: "rgba(255,255,255,0.88)",
-              padding: [3, 5],
-              borderRadius: 4,
+              color: "#f1fffd",
+              backgroundColor: "transparent",
+              padding: [3, 4],
+              textBorderColor: "rgba(3, 12, 18, 0.72)",
+              textBorderWidth: 1,
             },
             itemStyle: {
               color: row.color,
@@ -261,36 +284,33 @@ function buildChartOption({ chartType, rows, mode, activeId, selectedSkillIds, t
         shape: "circle",
         left: "center",
         top: "center",
-        width: "92%",
-        height: "92%",
-        sizeRange: [14, 48],
-        rotationRange: [-45, 45],
-        rotationStep: 15,
+        width: "98%",
+        height: "98%",
+        sizeRange: [17, 58],
+        rotationRange: [0, 0],
+        rotationStep: 0,
         gridSize: 8,
         drawOutOfBound: false,
         textStyle: {
-          fontFamily: '"华文琥珀", "STHupo", sans-serif',
-          fontWeight: 700,
-          color() {
-            const palette = ["#008000", "#2e8b57", "#66bb6a", "#3cb371", "#228b22", "#32cd32"];
-            return palette[Math.floor(Math.random() * palette.length)];
-          },
+          fontFamily: '"Aptos", "Segoe UI Variable", "PingFang SC", "Microsoft YaHei", sans-serif',
+          fontWeight: 620,
+          color: "#62d9ce",
         },
         emphasis: {
           focus: "self",
           textStyle: {
-            textShadowBlur: 8,
-            textShadowColor: "rgba(46,139,87,0.35)",
+            textShadowBlur: 10,
+            textShadowColor: "rgba(98,217,206,0.28)",
           },
         },
         data: rows
           .filter((row) => row.value > 0)
-          .map((row) => ({
+          .map((row, index) => ({
             ...row,
             name: row.label,
             value: row.value,
             textStyle: {
-              color: row.color,
+              color: WORD_PALETTE[index % WORD_PALETTE.length],
             },
           })),
       },
@@ -317,6 +337,7 @@ export const DistributionChart = React.memo(function DistributionChart({
   onSkillSelect,
 }) {
   const { t } = useI18n();
+  const reduceMotion = useReducedMotion();
   const chartRef = useRef(null);
   const instanceRef = useRef(null);
   const clickHandlerRef = useRef(null);
@@ -336,8 +357,8 @@ export const DistributionChart = React.memo(function DistributionChart({
       ? distributionTitle || t("技能分布")
       : t("岗位分布");
 
-  const option = useMemo(
-    () => buildChartOption({
+  const option = useMemo(() => ({
+    ...buildChartOption({
       chartType,
       rows,
       mode,
@@ -345,8 +366,10 @@ export const DistributionChart = React.memo(function DistributionChart({
       selectedSkillIds,
       t,
     }),
-    [activeCategoryId, chartType, mode, rows, selectedSkillIds, t],
-  );
+    animation: !reduceMotion,
+    animationDuration: reduceMotion ? 0 : 560,
+    animationEasing: "cubicOut",
+  }), [activeCategoryId, chartType, mode, reduceMotion, rows, selectedSkillIds, t]);
 
   clickHandlerRef.current = (params) => {
     const row = params?.data;
@@ -421,10 +444,11 @@ export const DistributionChart = React.memo(function DistributionChart({
         <div
           ref={chartRef}
           className="pie-chart echarts-host"
+          role="img"
           aria-label={`${title} · ${t(CHART_TYPE_LABELS[chartType])}`}
         />
       </div>
-      <div className="chart-type-dots" aria-hidden="true">
+      <div className="chart-type-dots" role="group" aria-label={t("切换图表类型")}>
         {CHART_TYPES.map((type, index) => (
           <button
             key={type}
@@ -432,6 +456,7 @@ export const DistributionChart = React.memo(function DistributionChart({
             className={index === chartTypeIndex ? "is-active" : ""}
             onClick={() => setChartTypeIndex(index)}
             aria-label={t(CHART_TYPE_LABELS[type])}
+            aria-pressed={index === chartTypeIndex}
           />
         ))}
       </div>

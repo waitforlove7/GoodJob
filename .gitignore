@@ -3,3 +3,7 @@ dist/
 .DS_Store
 preview.png
 data/*.partial.json
+.tmp/
+__pycache__/
+*.pyc
+debug.log

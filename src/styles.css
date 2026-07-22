@@ -1747,38 +1747,76 @@ a {
 }
 
 .distribution-chart-switch {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex: 0 0 auto;
+  min-height: 42px;
+  padding: 4px;
+  border: 1px solid rgba(98, 217, 206, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(98, 217, 206, 0.035) 1px, transparent 1px) 0 0 / 12px 100%,
+    rgba(5, 18, 26, 0.88);
+  box-shadow: inset 0 1px 0 rgba(217, 255, 251, 0.05), 0 10px 28px rgba(0, 0, 0, 0.18);
+}
+
+.distribution-chart-switch::before,
+.distribution-chart-switch::after {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  pointer-events: none;
+  content: "";
+}
+
+.distribution-chart-switch::before {
+  top: -1px;
+  left: -1px;
+  border-top: 1px solid #8aeee5;
+  border-left: 1px solid #8aeee5;
+}
+
+.distribution-chart-switch::after {
+  right: -1px;
+  bottom: -1px;
+  border-right: 1px solid #8aeee5;
+  border-bottom: 1px solid #8aeee5;
 }
 
 .chart-nav-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  border: 1px solid rgba(46, 139, 87, 0.25);
-  border-radius: 8px;
-  background: #ffffff;
-  color: #008000;
+  border: 1px solid rgba(98, 217, 206, 0.2);
+  border-radius: 6px;
+  background: rgba(13, 37, 47, 0.76);
+  color: #78e2d8;
   cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease;
+  transition: color 180ms ease, background 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
 .chart-nav-btn:hover {
-  background: #e8f5e9;
-  border-color: rgba(46, 139, 87, 0.45);
+  border-color: rgba(138, 238, 229, 0.56);
+  background: rgba(30, 82, 88, 0.34);
+  color: #b8fff8;
+  transform: translateY(-1px);
 }
 
 .chart-type-label {
-  min-width: 64px;
-  color: #2e8b57;
-  font-size: 12px;
-  font-weight: 700;
+  min-width: 108px;
+  padding-inline: 7px;
+  color: #c3f5ef;
+  font-family: "Aptos Display", "Segoe UI Variable Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+  font-weight: 680;
+  letter-spacing: 0.04em;
   text-align: center;
+  white-space: nowrap;
 }
 
 .chart-type-dots {
@@ -1789,17 +1827,34 @@ a {
 }
 
 .chart-type-dots button {
-  width: 7px;
-  height: 7px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
-  background: rgba(46, 139, 87, 0.22);
+  border-radius: 6px;
+  background: transparent;
   cursor: pointer;
 }
 
+.chart-type-dots button::after {
+  display: block;
+  width: 6px;
+  height: 6px;
+  margin: auto;
+  border-radius: 50%;
+  background: rgba(128, 150, 162, 0.36);
+  content: "";
+  transition: width 180ms ease, border-radius 180ms ease, background 180ms ease;
+}
+
 .chart-type-dots button.is-active {
-  background: #2e8b57;
+  background: rgba(98, 217, 206, 0.06);
+}
+
+.chart-type-dots button.is-active::after {
+  width: 14px;
+  border-radius: 999px;
+  background: #62d9ce;
 }
 
 .echarts-host {
