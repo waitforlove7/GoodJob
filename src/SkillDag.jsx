@@ -1,4 +1,5 @@
 ﻿import { useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   buildSkillDagModel,
   evaluateSkillDag,
@@ -21,7 +22,7 @@ const CLUSTER_CENTERS = {
   cloud: { x: 850, y: 470 },
 };
 
-export function SkillDag({ graph, selectedSkillIds, onToggleSkill, selectedCategoryId, onSelectCategory }) {
+export function SkillDag({ graph, companyLabel, selectedSkillIds, onToggleSkill, selectedCategoryId, onSelectCategory }) {
   const { t } = useI18n();
   const model = useMemo(() => buildSkillDagModel(graph), [graph]);
   const initialLayout = useMemo(() => buildInitialLayout(model), [model]);
@@ -80,6 +81,16 @@ export function SkillDag({ graph, selectedSkillIds, onToggleSkill, selectedCateg
 
   return (
     <div className="skill-dag-shell">
+      <Link
+        className="skill-dag-company"
+        to="/galaxy"
+        aria-live="polite"
+        title={t("点击返回岗位宇宙")}
+        aria-label={t("返回岗位宇宙查看 {company}", { company: companyLabel || t("全部") })}
+      >
+        <span>{t("当前公司")}</span>
+        <strong>{companyLabel || t("全部")}</strong>
+      </Link>
       <div className="skill-dag-heading">
         <label className="skill-dag-search">
           <input
@@ -319,13 +330,13 @@ function buildInitialLayout(model) {
   const positions = {};
   const FALLBACK_CENTER = CLUSTER_CENTERS["backend"];
 
-  // Position category nodes
+  // Position category nodes (lowered so they sit below the company/search chrome)
   model.categories.forEach((category, index) => {
     const secondRow = index >= 6;
     const rowIndex = secondRow ? index - 6 : index;
     positions[category.id] = {
       x: (secondRow ? 170 : 90) + rowIndex * 164,
-      y: secondRow ? 140 : 10,
+      y: secondRow ? 160 : 30,
     };
   });
 

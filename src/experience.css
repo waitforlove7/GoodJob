@@ -167,7 +167,7 @@ button:active,
   position: absolute;
   z-index: 1;
   top: 50%;
-  left: -10%;
+  left: 20%;
   grid-column: 3;
   width: clamp(360px, 32vw, 520px);
   justify-self: center;
@@ -373,15 +373,16 @@ button:active,
   border-radius: 50%;
 }
 
-.career-orbit > span:nth-of-type(1) { top: 5%; left: 46%; }
-.career-orbit > span:nth-of-type(2) { top: 20%; right: 3%; opacity: 0.65; }
-.career-orbit > span:nth-of-type(3) { top: 44%; right: -2%; }
-.career-orbit > span:nth-of-type(4) { right: 15%; bottom: 12%; opacity: 0.7; }
-.career-orbit > span:nth-of-type(5) { bottom: 3%; left: 39%; }
-.career-orbit > span:nth-of-type(6) { bottom: 18%; left: 5%; opacity: 0.55; }
-.career-orbit > span:nth-of-type(7) { top: 42%; left: -3%; }
-.career-orbit > span:nth-of-type(8) { top: 17%; left: 13%; opacity: 0.75; }
-.career-orbit > span:nth-of-type(9) { top: 60%; left: 34%; opacity: 0.45; filter: blur(0.4px); }
+/* Spread labels along the rings, within ~36%–85% so they stay clear of the slogan. */
+.career-orbit > span:nth-of-type(1) { top: 28%; left: 66%; }          /* orbit-a top arc */
+.career-orbit > span:nth-of-type(2) { top: 14%; left: 80%; opacity: 0.65; } /* orbit-b upper-right */
+.career-orbit > span:nth-of-type(3) { top: 46%; left: 85%; }          /* right tip */
+.career-orbit > span:nth-of-type(4) { top: 72%; left: 74%; opacity: 0.7; } /* orbit-a lower-right */
+.career-orbit > span:nth-of-type(5) { top: 86%; left: 52%; }          /* orbit-a bottom */
+.career-orbit > span:nth-of-type(6) { top: 68%; left: 38%; opacity: 0.55; } /* lower-left on ring */
+.career-orbit > span:nth-of-type(7) { top: 40%; left: 36%; }          /* mid-left on ring */
+.career-orbit > span:nth-of-type(8) { top: 18%; left: 48%; opacity: 0.75; } /* upper arc */
+.career-orbit > span:nth-of-type(9) { top: 56%; left: 58%; opacity: 0.45; filter: blur(0.4px); } /* inner ring */
 
 .home-copy {
   position: absolute;

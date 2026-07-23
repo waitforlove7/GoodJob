@@ -43,6 +43,7 @@ function App({ language, onLanguageChange }) {
   const reduceMotion = useReducedMotion();
   const [companyKey, setCompanyKey] = useState("all");
   const [graph, setGraph] = useState(null);
+  const [allGraph, setAllGraph] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [layerView, setLayerView] = useState("category");
@@ -69,6 +70,7 @@ function App({ language, onLanguageChange }) {
     const cached = graphCache.current.get(companyKey);
     if (cached) {
       setGraph(cached);
+      if (companyKey === "all") setAllGraph(cached);
       setLoading(false);
       setLoadError(null);
       setSelected(null);
@@ -99,6 +101,7 @@ function App({ language, onLanguageChange }) {
         if (!cancelled) {
           graphCache.current.set(companyKey, nextGraph);
           setGraph(nextGraph);
+          if (companyKey === "all") setAllGraph(nextGraph);
         }
       } catch (error) {
         console.error("[GoodJob] Failed to load company data:", error);
@@ -112,6 +115,36 @@ function App({ language, onLanguageChange }) {
     })();
     return () => { cancelled = true; };
   }, [companyKey]);
+
+  // Homepage always shows merged totals, even after switching company elsewhere.
+  useEffect(() => {
+    if (allGraph) return undefined;
+    const cached = graphCache.current.get("all");
+    if (cached) {
+      setAllGraph(cached);
+      return undefined;
+    }
+    // Default companyKey is "all"; the main loader will populate allGraph.
+    if (companyKey === "all") return undefined;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await loadMergedData(COMPANY_KEYS);
+        const nextGraph = buildJobGraph(payload, {
+          source: payload.source,
+          categoryOverrides: buildMergedOverrides(COMPANY_KEYS),
+        });
+        if (!cancelled) {
+          graphCache.current.set("all", nextGraph);
+          setAllGraph(nextGraph);
+        }
+      } catch (error) {
+        console.error("[GoodJob] Failed to load merged homepage data:", error);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [allGraph, companyKey]);
 
   const handleSelect = useCallback((nextSelection) => {
     setRelatedJobId(null);
@@ -268,9 +301,9 @@ function App({ language, onLanguageChange }) {
           transition={{ duration: reduceMotion ? 0 : 0.34, ease: [0.16, 1, 0.3, 1] }}
         >
           <Routes location={location}>
-            <Route path="/" element={<HomePage graph={graph} loading={loading} language={language} onMenuOpen={() => setMenuOpen(true)} onLanguageChange={onLanguageChange} />} />
+            <Route path="/" element={<HomePage graph={allGraph} loading={!allGraph} language={language} onMenuOpen={() => setMenuOpen(true)} onLanguageChange={onLanguageChange} />} />
             <Route path="/galaxy" element={explorerPage()} />
-            <Route path="/skilldag" element={<SkillDagPage graph={graph} pageHeader={(c, t) => pageHeader(c, t)} copy={copy} masteredSkillIds={masteredSkillIds} onToggleSkill={handleToggleMasteredSkill} />} />
+            <Route path="/skilldag" element={<SkillDagPage graph={graph} companyKey={companyKey} pageHeader={(c, t) => pageHeader(c, t)} copy={copy} masteredSkillIds={masteredSkillIds} onToggleSkill={handleToggleMasteredSkill} />} />
             <Route path="/career" element={
               <main className="app-shell exhibition-app career-page-shell">
                 {pageHeader(copy("个人主页", "Profile"), copy("设定职业目标，跟踪技能进度，上传简历匹配岗位", "Set career goals, track skill progress, upload resume to match jobs"))}
@@ -700,9 +733,12 @@ function ViewToggle({ activeView, onChange }) {
   );
 }
 
-function SkillDagPage({ graph, pageHeader, copy, masteredSkillIds, onToggleSkill }) {
+function SkillDagPage({ graph, companyKey, pageHeader, copy, masteredSkillIds, onToggleSkill }) {
   const { t } = useI18n();
   const [selectedDagCategoryId, setSelectedDagCategoryId] = useState(null);
+  const companyLabel = companyKey === "all"
+    ? t("全部")
+    : t(COMPANY_CONFIGS[companyKey]?.LABEL || companyKey);
 
   return (
     <main className="app-shell exhibition-app">
@@ -713,6 +749,7 @@ function SkillDagPage({ graph, pageHeader, copy, masteredSkillIds, onToggleSkill
             {graph ? (
               <SkillDag
                 graph={graph}
+                companyLabel={companyLabel}
                 selectedSkillIds={masteredSkillIds}
                 onToggleSkill={onToggleSkill}
                 selectedCategoryId={selectedDagCategoryId}
